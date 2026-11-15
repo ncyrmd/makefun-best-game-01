@@ -1,95 +1,156 @@
-// Keyboard + mouse, read once per frame. Movement keys are held; dash, flare,
-// confirm and pause are edge-triggered actions the loop consumes.
+// Emberkeeper v2 — keyboard + mouse, and nothing else. The game reads the
+// world through direction() every frame (held keys) and through takeActions()
+// (edge-triggered presses, consumed once). Mouse clicks are queued the same
+// way: clickPosition() returns the last click and clears it, so a click can
+// only place one brazier or press one button.
 export const ACTION_DASH = 1;
 export const ACTION_FLARE = 2;
 export const ACTION_CONFIRM = 4;
 export const ACTION_PAUSE = 8;
 export const ACTION_MUTE = 16;
+export const ACTION_BUILD = 32;
+export const ACTION_RESTART = 64;
 
 const MOVE_KEYS = {
-  ArrowLeft: [-1, 0], KeyA: [-1, 0],
-  ArrowRight: [1, 0], KeyD: [1, 0],
-  ArrowUp: [0, -1], KeyW: [0, -1],
-  ArrowDown: [0, 1], KeyS: [0, 1],
+  ArrowUp: { x: 0, y: -1 }, KeyW: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 }, KeyS: { x: 0, y: 1 },
+  ArrowLeft: { x: -1, y: 0 }, KeyA: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 }, KeyD: { x: 1, y: 0 },
 };
 
 export function createInput(canvas) {
   const held = new Set();
-  let actions = 0;
+  let queued = 0;
   let mouse = { x: 0, y: 0, inside: false };
+  let click = null;
+  let touch = { active: false, x: 0, y: 0, startX: 0, startY: 0 };
 
-  function onKeyDown(event) {
-    if (MOVE_KEYS[event.code]) {
-      held.add(event.code);
-      event.preventDefault();
-      return;
-    }
-    if (event.code === 'Space' || event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
-      if (!event.repeat) actions |= ACTION_DASH;
-      event.preventDefault();
-    } else if (event.code === 'KeyF') {
-      if (!event.repeat) actions |= ACTION_FLARE;
-    } else if (event.code === 'Enter') {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (event.code === 'KeyP' || event.code === 'Escape') {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else if (event.code === 'KeyM') {
-      if (!event.repeat) actions |= ACTION_MUTE;
-    }
-  }
-
-  function onKeyUp(event) {
-    held.delete(event.code);
-  }
-
-  function onMouseMove(event) {
+  function toGameCoords(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    // CSS pixels relative to the canvas; callers scale to field coordinates.
-    mouse = {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-      inside: true,
+    return {
+      x: ((clientX - rect.left) / rect.width) * 960,
+      y: ((clientY - rect.top) / rect.height) * 600,
     };
   }
 
-  function onMouseDown(event) {
-    onMouseMove(event);
-    actions |= ACTION_FLARE;
+  function onKeyDown(e) {
+    if (MOVE_KEYS[e.code]) {
+      held.add(e.code);
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'Space') {
+      queued |= ACTION_DASH | ACTION_CONFIRM;
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'KeyF') { queued |= ACTION_FLARE; return; }
+    if (e.code === 'Enter') { queued |= ACTION_CONFIRM; return; }
+    if (e.code === 'KeyP' || e.code === 'Escape') { queued |= ACTION_PAUSE; return; }
+    if (e.code === 'KeyM') { queued |= ACTION_MUTE; return; }
+    if (e.code === 'KeyB') { queued |= ACTION_BUILD; return; }
+    if (e.code === 'KeyR') { queued |= ACTION_RESTART; return; }
   }
 
-  function onClick() {
-    actions |= ACTION_CONFIRM;
+  function onKeyUp(e) {
+    held.delete(e.code);
+  }
+
+  function onMouseMove(e) {
+    const p = toGameCoords(e.clientX, e.clientY);
+    mouse = { x: p.x, y: p.y, inside: true };
+  }
+
+  function onMouseDown(e) {
+    const p = toGameCoords(e.clientX, e.clientY);
+    click = p;
+  }
+
+  function onMouseLeave() {
+    mouse = { x: mouse.x, y: mouse.y, inside: false };
+  }
+
+  // Touch: drag to move, tap to flare, double-tap to dash.
+  let lastTap = 0;
+  function onTouchStart(e) {
+    const t = e.touches[0];
+    const p = toGameCoords(t.clientX, t.clientY);
+    touch = { active: true, x: p.x, y: p.y, startX: p.x, startY: p.y };
+    const now = Date.now();
+    if (now - lastTap < 300) queued |= ACTION_DASH;
+    lastTap = now;
+    e.preventDefault();
+  }
+  function onTouchMove(e) {
+    const t = e.touches[0];
+    const p = toGameCoords(t.clientX, t.clientY);
+    touch.x = p.x; touch.y = p.y;
+    e.preventDefault();
+  }
+  function onTouchEnd(e) {
+    if (touch.active && Math.hypot(touch.x - touch.startX, touch.y - touch.startY) < 12) {
+      click = { x: touch.x, y: touch.y };
+    }
+    touch.active = false;
+    e.preventDefault();
   }
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   canvas.addEventListener('mousemove', onMouseMove);
   canvas.addEventListener('mousedown', onMouseDown);
-  canvas.addEventListener('click', onClick);
+  canvas.addEventListener('mouseleave', onMouseLeave);
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd, { passive: false });
 
-  return {
-    /** Held movement as a normalised {x, y} vector. */
-    direction() {
-      let x = 0;
-      let y = 0;
-      for (const code of held) {
-        const vector = MOVE_KEYS[code];
-        if (vector) {
-          x += vector[0];
-          y += vector[1];
-        }
+  function direction() {
+    let x = 0;
+    let y = 0;
+    for (const code of held) {
+      const v = MOVE_KEYS[code];
+      if (v) { x += v.x; y += v.y; }
+    }
+    if (touch.active) {
+      const dx = touch.x - touch.startX;
+      const dy = touch.y - touch.startY;
+      const len = Math.hypot(dx, dy);
+      if (len > 14) {
+        x = dx / len;
+        y = dy / len;
       }
-      if (x === 0 && y === 0) return { x: 0, y: 0 };
-      const length = Math.hypot(x, y);
-      return { x: x / length, y: y / length };
-    },
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
-    },
-    mousePosition() {
-      return mouse;
-    },
-  };
+    }
+    const len = Math.hypot(x, y);
+    if (len > 1) { x /= len; y /= len; }
+    return { x, y };
+  }
+
+  function takeActions() {
+    const bits = queued;
+    queued = 0;
+    return bits;
+  }
+
+  function mousePosition() {
+    return { x: mouse.x, y: mouse.y, inside: mouse.inside };
+  }
+
+  function clickPosition() {
+    const c = click;
+    click = null;
+    return c;
+  }
+
+  function detach() {
+    window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('keyup', onKeyUp);
+    canvas.removeEventListener('mousemove', onMouseMove);
+    canvas.removeEventListener('mousedown', onMouseDown);
+    canvas.removeEventListener('mouseleave', onMouseLeave);
+    canvas.removeEventListener('touchstart', onTouchStart);
+    canvas.removeEventListener('touchmove', onTouchMove);
+    canvas.removeEventListener('touchend', onTouchEnd);
+  }
+
+  return { direction, takeActions, mousePosition, clickPosition, detach };
 }

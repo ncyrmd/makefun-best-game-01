@@ -1,111 +1,147 @@
-// The screenshot scenes behind ?shot=start|play|boon|end. Each one plays the
-// real rules forward from a fresh world for a fixed number of steps, steered
-// by a simple autopilot, so the frame is what a short game really looks like
-// and the same seed always gives the same frame.
-import { FIELD, HEARTH, STEP } from './config.js';
-import { EVENT_OVER, EVENT_WIN } from './world.js';
-import { SCREEN_BOON, SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
+// Emberkeeper v2 — screenshot staging and the headless autopilot.
+// stageShot(kind, world) arranges a fixed scene for one of the four
+// screenshots (start / play / boon / end) and returns { screen, best }.
+// autopilot(state, world) plays the game well enough to win headless, so
+// balance can be tested without a browser. actionsOf(pilot) turns a pilot
+// decision into the step() action bitmask.
+import { BOONS, GOLDEN, modifierForNight, nightPlan } from './config.js';
+import { EVENT_WIN } from './world.js';
 
-const START_SECONDS = 6;
-const PLAY_SECONDS = 60;
-const BOON_SECONDS = 200;
-const END_LIMIT_SECONDS = 600;
-const SAMPLE = 1 / 30;
-
-/** Steer toward the wisp nearest the hearth (the most dangerous one), else the
- *  nearest ember; dash and flare when crowded. */
-function autopilot(state, world) {
-  const player = state.player;
-  let target = null;
-  let bestDanger = Infinity;
-  for (const wisp of state.wisps) {
-    const danger = Math.hypot(wisp.x - HEARTH.x, wisp.y - HEARTH.y);
-    if (danger < bestDanger) {
-      bestDanger = danger;
-      target = wisp;
-    }
+export function stageShot(kind, world) {
+  const s = world.state;
+  if (kind === 'start') {
+    return { screen: 'title', best: s.best || 0 };
   }
-  if (!target) {
-    let bestDistance = Infinity;
-    for (const shard of state.shards) {
-      const distance = Math.hypot(shard.x - player.x, shard.y - player.y);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        target = shard;
-      }
-    }
+  if (kind === 'play') {
+    // Night 3, mid-fight: two braziers burning, a mixed wave on screen, a
+    // golden wisp in the trees, shards to grab, combo running.
+    s.night = 3;
+    s.modifier = modifierForNight(3);
+    s.plan = nightPlan(3);
+    s.toSpawn = 30;
+    s.spawned = 20;
+    s.score = 180;
+    s.fuel = 78;
+    s.embers = 12;
+    s.combo = 3;
+    s.comboTimer = 2;
+    s.banner = { text: '', timer: 0 };
+    s.player.x = 480;
+    s.player.y = 440;
+    world.placeBrazier(300, 420);
+    world.placeBrazier(660, 200);
+    const spots = [
+      ['wisp', 300, 180], ['wisp', 620, 140], ['wisp', 760, 330],
+      ['wisp', 200, 380], ['wisp', 540, 120], ['dart', 700, 260],
+      ['dart', 250, 300], ['splitter', 820, 180], ['splitter', 150, 200],
+      ['golden', 830, 430],
+    ];
+    for (const [k, x, y] of spots) world.spawnWisp(k, x, y);
+    s.shards.push(
+      { x: 430, y: 380, life: 12, value: 1 },
+      { x: 520, y: 400, life: 12, value: 1 },
+      { x: 560, y: 470, life: 12, value: 1 },
+    );
+    return { screen: 'play', best: s.best || 0 };
   }
-  if (!target) return { move: { x: 0, y: -1 }, dash: false, flare: false };
-  const dx = target.x - player.x;
-  const dy = target.y - player.y;
-  const distance = Math.hypot(dx, dy) || 1;
-  // Stop inside the lantern light instead of running through the wisp.
-  const move = distance < 70 ? { x: 0, y: 0 } : { x: dx / distance, y: dy / distance };
-  let nearby = 0;
-  for (const wisp of state.wisps) {
-    if (Math.hypot(wisp.x - player.x, wisp.y - player.y) < 120) nearby += 1;
+  if (kind === 'boon') {
+    // Night 2 cleared: three boons on the table, including the two new ones.
+    s.night = 2;
+    s.nightCleared = true;
+    s.spawned = s.toSpawn;
+    s.score = 240;
+    s.fuel = 61;
+    s.embers = 9;
+    const pick = (id) => BOONS.find((b) => b.id === id);
+    const chosen = [pick('brazier'), pick('golden'), pick('wide')];
+    s.boonChoices = chosen.map((b) => ({ id: b.id, name: b.name, blurb: b.blurb }));
+    return { screen: 'boon', best: s.best || 0, choices: s.boonChoices };
   }
-  const flare = nearby >= 3 && state.embers >= world.flareCost();
-  const dash = nearby >= 2 && player.dashCooldown <= 0;
-  return { move, dash, flare };
+  // end: the win screen — a golden dawn after all eight nights.
+  s.night = 8;
+  s.won = true;
+  s.over = true;
+  s.score = 3240;
+  s.best = Math.max(s.best || 0, 3240);
+  s.fuel = 34;
+  s.stats.banished = 212;
+  s.stats.collected = 148;
+  s.stats.brazierPlaced = 5;
+  s.stats.goldenBanished = 6;
+  s.stats.flares = 23;
+  s.stats.dashes = 41;
+  return { screen: 'win', best: Math.max(s.best || 0, 3240) };
 }
 
-/** Stand still: the fire drains and the wisps reach the hearth, as a lost game does. */
-function idlePilot() {
+export function idlePilot() {
   return { move: { x: 0, y: 0 }, dash: false, flare: false };
 }
 
-function actionsOf(pilot) {
-  return (pilot.dash ? 1 : 0) | (pilot.flare ? 2 : 0);
+export function actionsOf(pilot) {
+  if (!pilot) return 0;
+  let bits = 0;
+  if (pilot.dash) bits |= 1;
+  if (pilot.flare) bits |= 2;
+  return bits;
 }
 
-/**
- * Set `world` to the named scene (start, play, boon or end; any other name is
- * start) and return the screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  const state = world.state;
-  if (name !== 'play' && name !== 'boon' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.stepAmbient(STEP);
-    return { screen: SCREEN_TITLE, best: 0 };
-  }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : name === 'boon' ? BOON_SECONDS : PLAY_SECONDS;
-  const pilot = name === 'end' ? idlePilot : autopilot;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    // The boon scene stops the moment the choice appears.
-    if (name === 'boon' && state.boonChoices.length > 0) {
-      return { screen: SCREEN_BOON, best: state.score };
-    }
-    // A lost game still clears nights on the lantern alone: take the first boon
-    // and keep standing still, so the fire eventually dies.
-    if (state.boonChoices.length > 0) world.applyBoon(state.boonChoices[0].id);
-    const decision = pilot(state, world);
-    const result = world.step(STEP, decision.move, actionsOf(decision));
-    if (result.mask & EVENT_OVER) return { screen: SCREEN_OVER, best: state.score };
-    if (result.mask & EVENT_WIN) return { screen: SCREEN_WIN, best: state.score };
-    // The play scene wants mid-wave action: stop once the field is busy, while
-    // the night is still running and wisps are on screen.
-    if (name === 'play' && index * STEP > 8
-      && ((state.spawned >= 10 && state.wisps.length >= 5)
-        || (state.spawned >= 13 && state.wisps.length >= 4))) {
-      return { screen: SCREEN_PLAY, best: state.score };
-    }
-  }
-  // The boon scene never cleared in time: stage it by hand so the shot still shows it.
-  if (name === 'boon') {
-    world.reset();
-    world.state.night = 2;
-    world.state.score = 340;
-    world.state.embers = 7;
-    world.state.boonChoices = world.state.boonChoices.length > 0
-      ? world.state.boonChoices
-      : [{ id: 'wide', name: 'Wide Lantern', blurb: 'Lantern light reaches +28 farther.' },
-         { id: 'swift', name: 'Swift Boots', blurb: 'Move 15% faster.' },
-         { id: 'flare', name: 'Bright Flare', blurb: 'Flare is +55 wider and costs 1 less.' }];
-    return { screen: SCREEN_BOON, best: 340 };
-  }
-  return { screen: SCREEN_PLAY, best: state.score };
-}
+// The autopilot's job: keep the hearth alive. It chases the wisp closest to
+// the hearth, grabs nearby shards, flares when a cluster closes in, and
+// dashes to cover ground. It does not place braziers or pick boons — the
+// test driver does those, because they are the strategic choices.
+export function autopilot(state, world) {
+  const p = state.player;
+  const hx = 480;
+  const hy = 310;
+  const move = { x: 0, y: 0 };
+  let dash = false;
+  let flare = false;
 
-export { FIELD, HEARTH, autopilot, idlePilot, actionsOf };
+  // Urgency: the wisp nearest the hearth is the one that kills the run.
+  let threat = null;
+  let threatD = Infinity;
+  for (const w of state.wisps) {
+    const d = Math.hypot(w.x - hx, w.y - hy);
+    if (d < threatD) { threatD = d; threat = w; }
+  }
+  // A shard worth grabbing when nothing is about to hit the hearth.
+  let shard = null;
+  let shardD = Infinity;
+  if (!threat || threatD > 150) {
+    for (const s of state.shards) {
+      const d = Math.hypot(s.x - p.x, s.y - p.y);
+      if (d < shardD) { shardD = d; shard = s; }
+    }
+  }
+  let tx = null;
+  let ty = null;
+  if (shard && shardD < 220) {
+    tx = shard.x; ty = shard.y;
+  } else if (threat) {
+    // Intercept between the wisp and the hearth.
+    tx = (threat.x + hx) / 2;
+    ty = (threat.y + hy) / 2;
+    // But if the wisp is already in aura range, step onto it to finish it.
+    const pd = Math.hypot(threat.x - p.x, threat.y - p.y);
+    if (pd < 110) { tx = threat.x; ty = threat.y; }
+  }
+  if (tx !== null) {
+    const dx = tx - p.x;
+    const dy = ty - p.y;
+    const len = Math.hypot(dx, dy) || 1;
+    move.x = dx / len;
+    move.y = dy / len;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 190 && p.dashCooldown <= 0) dash = true;
+  }
+  // Flare when a cluster is on top of the keeper and the purse allows it.
+  if (state.embers >= world.flareCost()) {
+    let near = 0;
+    const fr = 150 + (state.mods ? state.mods.flareRadiusBonus : 0);
+    for (const w of state.wisps) {
+      if (Math.hypot(w.x - p.x, w.y - p.y) < fr) near += 1;
+    }
+    if (near >= 3) flare = true;
+  }
+  return { move, dash, flare };
+}

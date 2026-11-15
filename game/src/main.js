@@ -1,235 +1,240 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed
-// 1/60 s steps, and the renderer paints what is there. The game moves between
-// six screens: title, play, boon choice, paused, game over and dawn (win).
-//
-// ?seed=N fixes the night's pattern. ?shot=start|play|boon|end (with &seed=N)
-// stages that scene instead of running the loop, paints it twice and sets
-// window.__shotReady for a screenshot.
-import { BEST_KEY, FIELD, STEP } from './config.js';
-import { createRandom } from './random.js';
-import { createAudio } from './audio.js';
+// Emberkeeper v2 — the browser entry: canvas, loop, screens, input wiring.
+// The world (world.js) owns the rules; the renderer (render.js) owns the
+// pixels; this file owns the frame loop and the screen state machine.
+// One action queue per frame: frame() takes the actions once and hands them
+// to the first fixed step, so a key press can never fire twice in one frame.
 import {
-  ACTION_CONFIRM, ACTION_DASH, ACTION_FLARE, ACTION_MUTE, ACTION_PAUSE, createInput,
-} from './input.js';
+  BEST_KEY, STEP,
+} from './config.js';
 import {
-  EVENT_BANISH, EVENT_DASH, EVENT_FLARE, EVENT_HEARTH_HIT, EVENT_NIGHT_CLEAR,
-  EVENT_OVER, EVENT_PICKUP, EVENT_WIN, createWorld,
+  EVENT_BANISH, EVENT_DASH, EVENT_FLARE, EVENT_HEARTH_HIT,
+  EVENT_NIGHT_CLEAR, EVENT_OVER, EVENT_PICKUP, EVENT_WIN,
+  createWorld, createWorldWithSeed,
 } from './world.js';
+import { createRenderer } from './render.js';
 import {
-  SCREEN_BOON, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN, createRenderer,
-} from './render.js';
+  ACTION_BUILD, ACTION_CONFIRM, ACTION_DASH, ACTION_FLARE,
+  ACTION_MUTE, ACTION_PAUSE, ACTION_RESTART, createInput,
+} from './input.js';
+import { createAudio } from './audio.js';
 import { stageShot } from './shots.js';
+import { canPlaceBrazier } from './braziers.js';
 
-const MAX_FRAME = 0.25;
-
-const params = new URLSearchParams(window.location.search);
-const shot = params.get('shot');
-const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
-
-const canvas = document.getElementById('game');
-const status = document.getElementById('status');
-const world = createWorld(createRandom(seed));
+const canvas = document.querySelector('canvas');
 const renderer = createRenderer(canvas);
+const input = createInput(canvas);
 const audio = createAudio();
-window.__emberkeeper = { world, state: world.state };
 
-function readBest() {
-  try {
-    return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
-  } catch {
-    return 0;
+let world = createWorld();
+let screen = renderer.SCREEN_TITLE;
+let buildMode = false;
+let hoverBoon = -1;
+let lastTime = 0;
+let acc = 0;
+// Edge-triggered actions are never dropped: a frame that runs zero fixed
+// steps (short dt after a long frame) must not swallow a key press. Fresh
+// actions accumulate here and are cleared only by the branch that consumes
+// them — the play branch clears them on its first fixed step.
+let pendingActions = 0;
+let best = 0;
+try { best = Number(localStorage.getItem(BEST_KEY) || 0) || 0; } catch (e) { best = 0; }
+world.state.best = best;
+
+function saveBest() {
+  if (world.state.score > best) {
+    best = world.state.score;
+    world.state.best = best;
+    try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) { /* private mode */ }
   }
 }
 
-function saveBest(value) {
-  try {
-    window.localStorage.setItem(BEST_KEY, String(value));
-  } catch {
-    // Storage can be off (private windows): the best score then lasts this visit only.
-  }
+function startRun() {
+  world = createWorld();
+  world.state.best = best;
+  screen = renderer.SCREEN_PLAY;
+  buildMode = false;
+  pendingActions = 0;
+  world.state.banner = { text: 'NIGHT 1', timer: 2.6 };
+  audio.unlock();
+  audio.nightStart();
 }
 
-function runShot(name) {
-  const scene = stageShot(name, world);
-  let painted = 0;
-  function paint() {
-    renderer.draw(world.state, scene.screen, scene.best);
-    painted += 1;
-    if (painted < 2) requestAnimationFrame(paint);
-    else window.__shotReady = true;
-  }
-  requestAnimationFrame(paint);
+function endRun(won) {
+  saveBest();
+  screen = won ? renderer.SCREEN_WIN : renderer.SCREEN_OVER;
+  buildMode = false;
+  if (won) audio.win(); else audio.lose();
 }
 
-function runGame() {
-  const input = createInput(canvas);
-  let screen = SCREEN_TITLE;
-  let best = readBest();
-  let accumulator = 0;
-  let last = performance.now();
-
-  function announce(message) {
-    status.textContent = message;
+function boonCardAt(x, y) {
+  const choices = world.state.boonChoices || [];
+  if (!choices.length) return -1;
+  const cw = 250;
+  const ch = 170;
+  const gap = 24;
+  const total = choices.length * cw + (choices.length - 1) * gap;
+  const x0 = (960 - total) / 2;
+  const yy = 190;
+  for (let i = 0; i < choices.length; i++) {
+    const xx = x0 + i * (cw + gap);
+    if (x >= xx && x <= xx + cw && y >= yy && y <= yy + ch) return i;
   }
+  return -1;
+}
 
-  function startGame() {
-    world.reset();
-    accumulator = 0;
-    screen = SCREEN_PLAY;
-    audio.unlock();
-    announce(`Playing. Night 1 of 8. Keep the hearth burning.`);
-  }
+function chooseBoon(i) {
+  const choices = world.state.boonChoices || [];
+  if (i < 0 || i >= choices.length) return;
+  const id = choices[i].id;
+  audio.boon();
+  world.applyBoon(id);
+  screen = renderer.SCREEN_PLAY;
+  hoverBoon = -1;
+}
 
-  function finishGame(won) {
-    screen = won ? SCREEN_WIN : SCREEN_OVER;
-    if (world.state.score > best) {
-      best = world.state.score;
-      saveBest(best);
+function playStep(dt, actions) {
+  const dir = input.direction();
+  // A click in play is a flare — unless build mode is on, where it plants.
+  let stepActions = 0;
+  if (actions & ACTION_DASH) stepActions |= ACTION_DASH;
+  if (actions & ACTION_FLARE) stepActions |= ACTION_FLARE;
+  if (buildMode) {
+    const click = input.clickPosition();
+    if (click) {
+      const placed = world.placeBrazier(click.x, click.y);
+      if (placed.ok) {
+        audio.flare();
+        if (world.state.embers < world.brazierCost()) buildMode = false;
+      }
     }
-    if (won) audio.win();
-    else audio.lose();
-    announce(won
-      ? `Dawn breaks. You survived all eight nights. Score ${world.state.score}. Best ${best}.`
-      : `Game over. The light faded on night ${world.state.night}. Score ${world.state.score}. Best ${best}.`);
+  } else {
+    const click = input.clickPosition();
+    if (click) stepActions |= ACTION_FLARE;
   }
-
-  function playSounds(result) {
-    if (result.mask & EVENT_BANISH) audio.banish(result.combo);
-    if (result.mask & EVENT_PICKUP) audio.pickup();
-    if (result.mask & EVENT_HEARTH_HIT) audio.hearthHit();
-    if (result.mask & EVENT_FLARE) audio.flare();
-    if (result.mask & EVENT_DASH) audio.dash();
-    if (result.mask & EVENT_NIGHT_CLEAR) audio.boon();
-  }
-
-  function stepPlay(actions) {
-    const move = input.direction();
-    let stepActions = 0;
-    if (actions & ACTION_DASH) stepActions |= 1;
-    if (actions & ACTION_FLARE) stepActions |= 2;
-    const result = world.step(STEP, move, stepActions);
-    playSounds(result);
-    if (result.mask & EVENT_OVER) finishGame(false);
-    else if (result.mask & EVENT_WIN) finishGame(true);
-    else if (result.mask & EVENT_NIGHT_CLEAR) {
-      screen = SCREEN_BOON;
-      announce(`Night ${world.state.night} is clear. Choose a boon.`);
-    }
-  }
-
-  function chooseBoon(index) {
-    const choices = world.state.boonChoices;
-    if (index < 0 || index >= choices.length) return;
-    const boon = choices[index];
-    world.applyBoon(boon.id);
-    audio.boon();
+  const result = world.step(dt, dir, stepActions);
+  const mask = result.mask;
+  if (mask & EVENT_BANISH) audio.banish();
+  if (mask & EVENT_PICKUP) audio.pickup();
+  if (mask & EVENT_DASH) audio.dash();
+  if (mask & EVENT_FLARE) audio.flare();
+  if (mask & EVENT_HEARTH_HIT) audio.hearthHit();
+  if (mask & EVENT_WIN) { endRun(true); return; }
+  if (mask & EVENT_NIGHT_CLEAR) {
+    screen = renderer.SCREEN_BOON;
     audio.nightStart();
-    screen = SCREEN_PLAY;
-    announce(`Night ${world.state.night}. Boon chosen: ${boon.name}.`);
+    return;
   }
+  if (mask & EVENT_OVER) { endRun(false); return; }
+  // Screen-level keys, handled after the step so a pause never eats a frame.
+  if (actions & ACTION_MUTE) audio.toggleMute();
+  if (actions & ACTION_PAUSE) { screen = renderer.SCREEN_PAUSED; return; }
+  if (actions & ACTION_BUILD) { buildMode = !buildMode; return; }
+  if (actions & ACTION_RESTART) { startRun(); return; }
+}
 
-  function boonCardAt(mouse) {
-    if (world.state.boonChoices.length === 0) return -1;
-    const cardWidth = 250;
-    const cardHeight = 170;
-    const gap = 24;
-    const total = cardWidth * 3 + gap * 2;
-    const startX = (FIELD.width - total) / 2;
-    const top = 200;
-    const scaleX = FIELD.width / canvas.clientWidth;
-    const scaleY = FIELD.height / canvas.clientHeight;
-    const x = mouse.x * scaleX;
-    const y = mouse.y * scaleY;
-    if (y < top || y > top + cardHeight) return -1;
-    for (let i = 0; i < 3; i += 1) {
-      const cardX = startX + i * (cardWidth + gap);
-      if (x >= cardX && x <= cardX + cardWidth) return i;
+function frame(t) {
+  requestAnimationFrame(frame);
+  const now = t || 0;
+  const dt = Math.min(0.1, Math.max(0, (now - lastTime) / 1000 || 0));
+  lastTime = now;
+  const time = now / 1000;
+  pendingActions |= input.takeActions();
+  const actions = pendingActions;
+
+  if (screen === renderer.SCREEN_TITLE) {
+    world.stepAmbient(dt);
+    pendingActions = 0;
+    if (actions & ACTION_CONFIRM) { startRun(); return; }
+    if (actions & ACTION_MUTE) audio.toggleMute();
+    const click = input.clickPosition();
+    if (click) { startRun(); return; }
+  } else if (screen === renderer.SCREEN_PLAY) {
+    acc += dt;
+    let first = true;
+    while (acc >= STEP) {
+      playStep(STEP, first ? actions : 0);
+      if (first) pendingActions = 0;
+      first = false;
+      acc -= STEP;
+      if (screen !== renderer.SCREEN_PLAY) { acc = 0; break; }
     }
-    return -1;
-  }
-
-  function handleActions() {
-    const actions = input.takeActions();
-    if (actions & ACTION_MUTE) {
-      const muted = audio.toggleMute();
-      announce(muted ? 'Sound off.' : 'Sound on.');
+  } else if (screen === renderer.SCREEN_BOON) {
+    const mouse = input.mousePosition();
+    hoverBoon = boonCardAt(mouse.x, mouse.y);
+    pendingActions = 0;
+    const click = input.clickPosition();
+    if (click) {
+      const i = boonCardAt(click.x, click.y);
+      if (i >= 0) { chooseBoon(i); return; }
     }
-    if (screen === SCREEN_TITLE) {
-      if (actions & (ACTION_CONFIRM | ACTION_DASH | ACTION_FLARE)) startGame();
-    } else if (screen === SCREEN_OVER || screen === SCREEN_WIN) {
-      if (actions & (ACTION_CONFIRM | ACTION_DASH | ACTION_FLARE)) startGame();
-      // R restarts too; it arrives as a keydown the input layer does not map, so
-      // listen for it directly on the window (see below).
-    } else if (screen === SCREEN_PAUSED) {
-      if (actions & (ACTION_PAUSE | ACTION_CONFIRM)) {
-        screen = SCREEN_PLAY;
-        announce('Playing.');
-      }
-    } else if (screen === SCREEN_BOON) {
-      if (actions & ACTION_CONFIRM) {
-        const card = boonCardAt(input.mousePosition());
-        if (card >= 0) chooseBoon(card);
-      }
-    } else if (screen === SCREEN_PLAY) {
-      if (actions & ACTION_PAUSE) {
-        screen = SCREEN_PAUSED;
-        announce('Paused.');
-      }
-    }
-    return actions;
+    if (actions & ACTION_CONFIRM) { chooseBoon(hoverBoon >= 0 ? hoverBoon : 0); return; }
+    if (actions & ACTION_MUTE) audio.toggleMute();
+  } else if (screen === renderer.SCREEN_PAUSED) {
+    pendingActions = 0;
+    if (actions & ACTION_PAUSE) { screen = renderer.SCREEN_PLAY; return; }
+    if (actions & ACTION_MUTE) audio.toggleMute();
+    if (actions & ACTION_RESTART) { startRun(); return; }
+    input.clickPosition();
+  } else if (screen === renderer.SCREEN_WIN || screen === renderer.SCREEN_OVER) {
+    pendingActions = 0;
+    if (actions & ACTION_RESTART) { startRun(); return; }
+    if (actions & ACTION_CONFIRM) { startRun(); return; }
+    const click = input.clickPosition();
+    if (click) { startRun(); return; }
+    if (actions & ACTION_MUTE) audio.toggleMute();
   }
 
-  function handleBoonKeys(event) {
-    if (screen !== SCREEN_BOON) return;
-    if (event.code === 'Digit1') chooseBoon(0);
-    else if (event.code === 'Digit2') chooseBoon(1);
-    else if (event.code === 'Digit3') chooseBoon(2);
+  // Build-mode ghost validity for the renderer.
+  let buildOk = true;
+  if (buildMode && screen === renderer.SCREEN_PLAY) {
+    const mouse = input.mousePosition();
+    const check = canPlaceBrazier(
+      world.state.braziers, mouse.x, mouse.y, world.state.mods.brazierSlots,
+    );
+    buildOk = check.ok && world.state.embers >= world.brazierCost();
   }
+  const ui = {
+    buildMode: buildMode && screen === renderer.SCREEN_PLAY,
+    buildOk,
+    mouse: input.mousePosition(),
+    hoverBoon,
+  };
+  renderer.draw(world.state, screen, time, ui);
+}
 
-  function handleRestartKey(event) {
-    if ((screen === SCREEN_OVER || screen === SCREEN_WIN) && event.code === 'KeyR') startGame();
-  }
+// Number keys for boon choice (keydown is separate from the action queue).
+window.addEventListener('keydown', (e) => {
+  if (screen !== renderer.SCREEN_BOON) return;
+  if (e.code === 'Digit1') chooseBoon(0);
+  if (e.code === 'Digit2') chooseBoon(1);
+  if (e.code === 'Digit3') chooseBoon(2);
+});
 
-  window.addEventListener('keydown', handleBoonKeys);
-  window.addEventListener('keydown', handleRestartKey);
-
-  function frame(now) {
-    requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    const actions = handleActions();
-    if (screen === SCREEN_TITLE) {
-      while (accumulator >= STEP) {
-        world.stepAmbient(STEP);
-        accumulator -= STEP;
-      }
-    } else if (screen === SCREEN_PLAY) {
-      // Edge-triggered actions (dash, flare) fire on the first step only, so one
-      // key press never dashes or flares twice in a slow frame.
-      let firstStep = true;
-      while (accumulator >= STEP && screen === SCREEN_PLAY) {
-        stepPlay(firstStep ? actions : 0);
-        firstStep = false;
-        accumulator -= STEP;
-      }
-      if (screen !== SCREEN_PLAY) accumulator = 0;
-    } else {
-      accumulator = 0;
-    }
-    renderer.draw(world.state, screen, best);
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    }
-  });
-
-  announce('Emberkeeper. Press Space or click to start.');
+// --- shot mode (?shot=start|play|boon|end&seed=N): stage a fixed scene,
+// draw it once, and raise the flag the screenshot harness waits for. ---
+const params = new URLSearchParams(window.location.search);
+const shotKind = params.get('shot');
+if (shotKind) {
+  const seed = Number(params.get('seed') || 7);
+  world = createWorldWithSeed(seed);
+  world.state.best = best;
+  const staged = stageShot(shotKind, world);
+  screen = staged.screen;
+  const ui = { buildMode: false, buildOk: true, mouse: { x: 0, y: 0, inside: false }, hoverBoon: -1 };
+  renderer.draw(world.state, screen, 1.2, ui);
+  window.__shotReady = true;
+  window.__emberkeeper = {
+    get state() { return world.state; },
+    screen: () => screen,
+    get world() { return world; },
+    version: 2,
+  };
+} else {
+  window.__emberkeeper = {
+    get state() { return world.state; },
+    screen: () => screen,
+    get world() { return world; },
+    version: 2,
+  };
   requestAnimationFrame(frame);
 }
-
-if (shot) runShot(shot);
-else runGame();
