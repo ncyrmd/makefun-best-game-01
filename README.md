@@ -18,6 +18,8 @@ and the dawn breaks.
 - **Dash** — Space. A burst of speed that burns through wisps in your path.
 - **Flare** — mouse click or F. A burst of light that banishes frail wisps
   around you. Costs 3 embers.
+- **Build a brazier** — B, then click a spot. A fire bowl that burns wisps
+  in its light until its fuel gutters out. Costs 5 embers.
 - **Pause** — P or Esc. **Sound** — M. **Restart** — R on the end screens.
 
 Your lantern's light slows wisps and burns them over time. Banishing wisps
@@ -27,7 +29,12 @@ a wider lantern, swifter boots, a brighter flare, a sturdier hearth, and more.
 If the fuel runs out, the light fades and the night wins.
 
 Four kinds of wisp stalk the fire: drifting **wisps**, quick **darts**,
-**splitters** that break into two, and armoured **brutes**.
+**splitters** that break into two, and armoured **brutes**. From night 5,
+**golden wisps** flee the keeper — banish one for 10 embers. Every night
+from the second carries a twist — Ember Rain, Swift Gloom, Thick Gloom,
+Golden Hour, Iron Gloom, Ember Drought, The Longest Night — named on the
+night banner and in the HUD. Eleven boons can be earned between nights,
+including Brazier Craft, Golden Touch and Ember Magnet.
 
 ## Run it
 
