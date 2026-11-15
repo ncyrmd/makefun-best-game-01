@@ -7,7 +7,7 @@ import {
   BEST_KEY, STEP,
 } from './config.js';
 import {
-  EVENT_BANISH, EVENT_DASH, EVENT_FLARE, EVENT_HEARTH_HIT,
+  EVENT_BANISH, EVENT_BOSS, EVENT_DASH, EVENT_FLARE, EVENT_HEARTH_HIT,
   EVENT_NIGHT_CLEAR, EVENT_OVER, EVENT_PICKUP, EVENT_WIN,
   createWorld, createWorldWithSeed,
 } from './world.js';
@@ -19,6 +19,7 @@ import {
 import { createAudio } from './audio.js';
 import { stageShot } from './shots.js';
 import { canPlaceBrazier } from './braziers.js';
+import { SHOP_TRACKS, shopBeginAt, shopRowAt } from './shop.js';
 
 const canvas = document.querySelector('canvas');
 const renderer = createRenderer(canvas);
@@ -29,6 +30,8 @@ let world = createWorld();
 let screen = renderer.SCREEN_TITLE;
 let buildMode = false;
 let hoverBoon = -1;
+let hoverShop = -1;
+let hoverShopBegin = false;
 let lastTime = 0;
 let acc = 0;
 // Edge-triggered actions are never dropped: a frame that runs zero fixed
@@ -88,8 +91,27 @@ function chooseBoon(i) {
   const id = choices[i].id;
   audio.boon();
   world.applyBoon(id);
-  screen = renderer.SCREEN_PLAY;
+  // The boon is in hand; now the hearth shop opens before the next night.
+  screen = renderer.SCREEN_SHOP;
   hoverBoon = -1;
+}
+
+// Buy one level of a shop track (by row). A failed buy is silent — the
+// row's price tag already shows whether the keeper can afford it.
+function buyShopRow(i) {
+  const track = SHOP_TRACKS[i];
+  if (!track) return;
+  if (world.buyShop(track.id).ok) audio.buy();
+}
+
+// Leave the shop and begin the next night.
+function beginNight() {
+  if (world.beginNextNight()) {
+    screen = renderer.SCREEN_PLAY;
+    hoverShop = -1;
+    hoverShopBegin = false;
+    audio.nightStart();
+  }
 }
 
 function playStep(dt, actions) {
@@ -118,6 +140,7 @@ function playStep(dt, actions) {
   if (mask & EVENT_DASH) audio.dash();
   if (mask & EVENT_FLARE) audio.flare();
   if (mask & EVENT_HEARTH_HIT) audio.hearthHit();
+  if (mask & EVENT_BOSS) audio.boss();
   if (mask & EVENT_WIN) { endRun(true); return; }
   if (mask & EVENT_NIGHT_CLEAR) {
     screen = renderer.SCREEN_BOON;
@@ -169,6 +192,19 @@ function frame(t) {
     }
     if (actions & ACTION_CONFIRM) { chooseBoon(hoverBoon >= 0 ? hoverBoon : 0); return; }
     if (actions & ACTION_MUTE) audio.toggleMute();
+  } else if (screen === renderer.SCREEN_SHOP) {
+    const mouse = input.mousePosition();
+    hoverShop = shopRowAt(mouse.x, mouse.y);
+    hoverShopBegin = shopBeginAt(mouse.x, mouse.y);
+    pendingActions = 0;
+    const click = input.clickPosition();
+    if (click) {
+      const i = shopRowAt(click.x, click.y);
+      if (i >= 0) { buyShopRow(i); return; }
+      if (shopBeginAt(click.x, click.y)) { beginNight(); return; }
+    }
+    if (actions & ACTION_CONFIRM) { beginNight(); return; }
+    if (actions & ACTION_MUTE) audio.toggleMute();
   } else if (screen === renderer.SCREEN_PAUSED) {
     pendingActions = 0;
     if (actions & ACTION_PAUSE) { screen = renderer.SCREEN_PLAY; return; }
@@ -198,19 +234,29 @@ function frame(t) {
     buildOk,
     mouse: input.mousePosition(),
     hoverBoon,
+    hoverShop,
+    hoverShopBegin,
   };
   renderer.draw(world.state, screen, time, ui);
 }
 
 // Number keys for boon choice (keydown is separate from the action queue).
 window.addEventListener('keydown', (e) => {
-  if (screen !== renderer.SCREEN_BOON) return;
-  if (e.code === 'Digit1') chooseBoon(0);
-  if (e.code === 'Digit2') chooseBoon(1);
-  if (e.code === 'Digit3') chooseBoon(2);
+  if (screen === renderer.SCREEN_BOON) {
+    if (e.code === 'Digit1') chooseBoon(0);
+    if (e.code === 'Digit2') chooseBoon(1);
+    if (e.code === 'Digit3') chooseBoon(2);
+    return;
+  }
+  if (screen === renderer.SCREEN_SHOP) {
+    if (e.code === 'Digit1') buyShopRow(0);
+    if (e.code === 'Digit2') buyShopRow(1);
+    if (e.code === 'Digit3') buyShopRow(2);
+    if (e.code === 'Digit4') buyShopRow(3);
+  }
 });
 
-// --- shot mode (?shot=start|play|boon|end&seed=N): stage a fixed scene,
+// --- shot mode (?shot=start|play|boon|shop|end&seed=N): stage a fixed scene,
 // draw it once, and raise the flag the screenshot harness waits for. ---
 const params = new URLSearchParams(window.location.search);
 const shotKind = params.get('shot');
@@ -227,14 +273,14 @@ if (shotKind) {
     get state() { return world.state; },
     screen: () => screen,
     get world() { return world; },
-    version: 2,
+    version: 3,
   };
 } else {
   window.__emberkeeper = {
     get state() { return world.state; },
     screen: () => screen,
     get world() { return world; },
-    version: 2,
+    version: 3,
   };
   requestAnimationFrame(frame);
 }

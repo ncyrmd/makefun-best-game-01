@@ -6,6 +6,7 @@
 // draw(state, screen, time, ui) only paints what the world already decided.
 import { FIELD, HEARTH, NIGHTS, PLAYER } from './config.js';
 import { createRandom } from './random.js';
+import { SHOP_LAYOUT, SHOP_TRACKS, shopCost, shopLevel } from './shop.js';
 
 const W = FIELD.width;
 const H = FIELD.height;
@@ -318,7 +319,78 @@ export function createRenderer(canvas) {
     ctx.quadraticCurveTo(x - Math.cos(w.wobble) * 7, y + 6, x, y);
     ctx.stroke();
 
-    if (w.kind === 'brute') {
+    if (w.kind === 'gloomlord') {
+      // The Gloomlord: a crowned wisp-king, big enough to be the night's
+      // focal point, with a segmented HP bar and a shockwave ring on pulse.
+      const g = ctx.createRadialGradient(x, y, 4, x, y, w.radius + 22);
+      g.addColorStop(0, 'rgba(150,80,220,0.95)');
+      g.addColorStop(0.55, 'rgba(90,40,160,0.6)');
+      g.addColorStop(1, 'rgba(60,20,120,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, w.radius + 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#241a38';
+      ctx.beginPath();
+      ctx.arc(x, y, w.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#c084fc';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y, w.radius - 3, 0, Math.PI * 2);
+      ctx.stroke();
+      // Crown of thorns.
+      ctx.fillStyle = '#c084fc';
+      for (let i = -2; i <= 2; i++) {
+        const cx = x + i * (w.radius * 0.32);
+        const cy = y - w.radius + 6 - (2 - Math.abs(i)) * 8;
+        ctx.beginPath();
+        ctx.moveTo(cx - 7, y - w.radius + 8);
+        ctx.lineTo(cx, cy);
+        ctx.lineTo(cx + 7, y - w.radius + 8);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // Burning red eyes.
+      ctx.fillStyle = '#ff4d3d';
+      ctx.beginPath();
+      ctx.arc(x - w.radius * 0.32, y - 6, 5, 0, Math.PI * 2);
+      ctx.arc(x + w.radius * 0.32, y - 6, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath();
+      ctx.arc(x - w.radius * 0.32, y - 6, 2, 0, Math.PI * 2);
+      ctx.arc(x + w.radius * 0.32, y - 6, 2, 0, Math.PI * 2);
+      ctx.fill();
+      // A grim, downturned maw.
+      ctx.strokeStyle = '#ff4d3d';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y + w.radius * 0.55, w.radius * 0.35, Math.PI + 0.3, Math.PI * 2 - 0.3);
+      ctx.stroke();
+      // Pulse shockwave.
+      if (w.pulseFlash > 0) {
+        const pr = w.radius + (0.6 - w.pulseFlash) / 0.6 * 90;
+        ctx.globalAlpha = w.pulseFlash / 0.6 * 0.7;
+        ctx.strokeStyle = '#c084fc';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y, pr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      // Segmented HP bar above the crown.
+      const bw = w.radius * 2.2;
+      const bx = x - bw / 2;
+      const by = y - w.radius - 26;
+      ctx.fillStyle = 'rgba(8,10,20,0.7)';
+      rr(ctx, bx - 2, by - 2, bw + 4, 10, 4);
+      ctx.fill();
+      ctx.fillStyle = '#c084fc';
+      rr(ctx, bx, by, Math.max(4, bw * (w.hp / w.maxHp)), 6, 3);
+      ctx.fill();
+      text(ctx, w.name || 'THE GLOOMLORD', x, by - 10, 'bold 11px system-ui, sans-serif', '#e8d5ff', 'center');
+    } else if (w.kind === 'brute') {
       ctx.fillStyle = '#2e3442';
       ctx.beginPath();
       ctx.arc(x, y, w.radius, 0, Math.PI * 2);
@@ -413,8 +485,8 @@ export function createRenderer(canvas) {
       ctx.fill();
       ctx.globalAlpha = 1;
     }
-    // HP pips for tough wisps.
-    if (w.maxHp > 1) {
+    // HP pips for tough wisps — the Gloomlord carries its own bar instead.
+    if (w.maxHp > 1 && w.kind !== 'gloomlord') {
       for (let i = 0; i < w.maxHp; i++) {
         ctx.fillStyle = i < w.hp ? '#ff6b5c' : 'rgba(255,255,255,0.25)';
         ctx.beginPath();
@@ -558,6 +630,21 @@ export function createRenderer(canvas) {
     if (ui && ui.buildMode) {
       text(ctx, 'BUILD MODE — click to place a brazier (' + Math.max(1, 5 + (state.mods ? state.mods.brazierCostDelta : 0)) + ' ◆) · B to cancel', W / 2, H - 22, 'bold 13px system-ui, sans-serif', '#ffd166', 'center');
     }
+    // The Gloomlord's health bar, under the top bar, while it stands.
+    if (state.boss) {
+      const b = state.boss;
+      const bw = 320;
+      const bx = W / 2 - bw / 2;
+      const by = 60;
+      text(ctx, b.name || 'THE GLOOMLORD', W / 2, by - 2, 'bold 13px system-ui, sans-serif', '#e8d5ff', 'center');
+      ctx.fillStyle = 'rgba(8,10,20,0.7)';
+      rr(ctx, bx - 2, by + 8, bw + 4, 12, 5);
+      ctx.fill();
+      ctx.fillStyle = '#c084fc';
+      rr(ctx, bx, by + 10, Math.max(6, bw * (b.hp / b.maxHp)), 8, 4);
+      ctx.fill();
+      text(ctx, b.hp + ' / ' + b.maxHp, W / 2, by + 14, 'bold 11px system-ui, sans-serif', '#ffffff', 'center');
+    }
   }
 
   function drawBanner(state) {
@@ -620,14 +707,15 @@ export function createRenderer(canvas) {
     ctx.fillStyle = 'rgba(6,8,18,0.62)';
     ctx.fillRect(0, 0, W, H);
     text(ctx, 'EMBERKEEPER', W / 2, 150, 'bold 64px system-ui, sans-serif', '#ffd166', 'center');
-    text(ctx, 'H E A R T H G U A R D', W / 2, 196, 'bold 18px system-ui, sans-serif', '#f5e6c8', 'center');
+    text(ctx, 'T H E   G L O O M L O R D   R I S E S', W / 2, 196, 'bold 18px system-ui, sans-serif', '#f5e6c8', 'center');
     text(ctx, 'Keep the last fire burning through 8 nights of gloom.', W / 2, 232, '16px system-ui, sans-serif', '#cfe8ff', 'center');
-    text(ctx, '8 NIGHTS  •  BUILD BRAZIERS  •  HUNT GOLDEN WISPS  •  CHOOSE BOONS', W / 2, 262, 'bold 14px system-ui, sans-serif', '#9fd8ff', 'center');
+    text(ctx, '8 NIGHTS  •  BUILD BRAZIERS  •  FACE THE GLOOMLORD  •  HEARTH SHOP  •  HUNT GOLDEN WISPS', W / 2, 262, 'bold 13px system-ui, sans-serif', '#9fd8ff', 'center');
     const lines = [
       'WASD / arrows — walk     SPACE — dash through wisps',
       'CLICK / F — flare, burns nearby wisps (3 embers)',
       'B — build a brazier (5 embers): a fire bowl that guards its ground',
-      'Feed ember shards to the hearth. Golden wisps pay 10 embers.',
+      'Nights 4 and 8 bring the Gloomlord — a crowned wisp-king that calls minions.',
+      'Between nights, spend embers in the hearth shop. Golden wisps pay 10 embers.',
     ];
     lines.forEach((l, i) => text(ctx, l, W / 2, 306 + i * 26, '14px system-ui, sans-serif', '#e8e2d0', 'center'));
     const pulse = 0.6 + 0.4 * Math.sin(time * 3);
@@ -682,6 +770,58 @@ export function createRenderer(canvas) {
     text(ctx, 'Score ' + state.score.toLocaleString('en-US') + '  •  Fuel ' + Math.ceil(state.fuel) + '/' + state.fuelMax + '  •  Embers ' + state.embers, W / 2, 420, '14px system-ui, sans-serif', '#9fb4d8', 'center');
   }
 
+  function drawShop(state, ui) {
+    ctx.fillStyle = 'rgba(6,8,18,0.55)';
+    ctx.fillRect(0, 0, W, H);
+    const p = SHOP_LAYOUT.panel;
+    panel(ctx, p.x, p.y, p.w, p.h);
+    text(ctx, 'THE HEARTH SHOP', W / 2, 108, 'bold 30px system-ui, sans-serif', '#ffd166', 'center');
+    text(ctx, 'Spend embers on the hearth before night ' + (state.night + 1) + ' — then begin.', W / 2, 140, '15px system-ui, sans-serif', '#f5e6c8', 'center');
+    text(ctx, '◆ ' + state.embers + ' embers', W / 2, 162, 'bold 15px system-ui, sans-serif', '#ffb347', 'center');
+    const r = SHOP_LAYOUT.rows;
+    SHOP_TRACKS.forEach((t, i) => {
+      const y = r.y + i * (r.h + r.gap);
+      const level = shopLevel(state.mods, t.id);
+      const cost = shopCost(state.mods, t.id);
+      const maxed = cost === null;
+      const afford = !maxed && state.embers >= cost;
+      const hover = ui && ui.hoverShop === i;
+      ctx.fillStyle = hover ? 'rgba(255,209,102,0.14)' : 'rgba(255,255,255,0.04)';
+      rr(ctx, r.x, y, r.w, r.h, 10);
+      ctx.fill();
+      ctx.strokeStyle = hover ? '#ffd166' : 'rgba(255,209,102,0.25)';
+      ctx.lineWidth = hover ? 2 : 1;
+      rr(ctx, r.x, y, r.w, r.h, 10);
+      ctx.stroke();
+      text(ctx, '' + (i + 1) + '  ' + t.name, r.x + 18, y + 22, 'bold 17px system-ui, sans-serif', '#ffd166');
+      text(ctx, t.blurb, r.x + 18, y + 45, '13px system-ui, sans-serif', '#e8e2d0');
+      // Level pips.
+      for (let l = 0; l < 3; l++) {
+        ctx.fillStyle = l < level ? '#ffd166' : 'rgba(255,255,255,0.22)';
+        ctx.beginPath();
+        ctx.arc(r.x + r.w - 150 + l * 20, y + r.h / 2, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Price tag, or MAX.
+      if (maxed) {
+        text(ctx, 'MAX', r.x + r.w - 52, y + r.h / 2, 'bold 15px system-ui, sans-serif', '#9fb4d8', 'center');
+      } else {
+        ctx.fillStyle = afford ? 'rgba(255,179,71,0.25)' : 'rgba(255,255,255,0.06)';
+        rr(ctx, r.x + r.w - 104, y + 14, 88, 34, 8);
+        ctx.fill();
+        text(ctx, cost + ' ◆', r.x + r.w - 60, y + r.h / 2, 'bold 15px system-ui, sans-serif', afford ? '#ffb347' : '#6b7688', 'center');
+      }
+    });
+    // Begin button.
+    const b = SHOP_LAYOUT.begin;
+    const bHover = ui && ui.hoverShopBegin;
+    ctx.fillStyle = bHover ? '#ffbe55' : '#ffb347';
+    rr(ctx, b.x, b.y, b.w, b.h, 10);
+    ctx.fill();
+    text(ctx, 'BEGIN NIGHT ' + (state.night + 1) + '  →', b.x + b.w / 2, b.y + b.h / 2 + 1, 'bold 17px system-ui, sans-serif', '#241a08', 'center');
+    text(ctx, 'Score ' + state.score.toLocaleString('en-US') + '  •  Fuel ' + Math.ceil(state.fuel) + '/' + state.fuelMax, W / 2, b.y + b.h + 22, '13px system-ui, sans-serif', '#9fb4d8', 'center');
+  }
+
   function drawEnd(state, won, time) {
     if (won) {
       const dawn = ctx.createLinearGradient(0, 0, 0, H);
@@ -700,13 +840,16 @@ export function createRenderer(canvas) {
     }
     const fuelBonus = won ? Math.round(state.fuel) * 10 : 0;
     // A dark backing card so the score lines stay readable over the hearth.
-    panel(ctx, W / 2 - 340, 282, 680, 108);
+    // The stats run on two lines now — one line overflows the card since
+    // the Gloomlord count joined it.
+    panel(ctx, W / 2 - 340, 282, 680, 132);
     text(ctx, 'SCORE ' + state.score.toLocaleString('en-US') + (won ? '  (includes +' + fuelBonus + ' fuel bonus)' : ''), W / 2, 310, 'bold 20px system-ui, sans-serif', '#ffd166', 'center');
-    text(ctx, 'Wisps banished ' + state.stats.banished + '  •  Embers gathered ' + state.stats.collected + '  •  Braziers built ' + state.stats.brazierPlaced + '  •  Golden banished ' + state.stats.goldenBanished, W / 2, 344, '14px system-ui, sans-serif', '#cfe8ff', 'center');
-    text(ctx, 'BEST ' + state.best.toLocaleString('en-US'), W / 2, 374, '14px system-ui, sans-serif', '#9fb4d8', 'center');
+    text(ctx, 'Wisps banished ' + state.stats.banished + '  •  Gloomlords felled ' + state.stats.bosses + '  •  Golden banished ' + state.stats.goldenBanished, W / 2, 340, '14px system-ui, sans-serif', '#cfe8ff', 'center');
+    text(ctx, 'Embers gathered ' + state.stats.collected + '  •  Braziers built ' + state.stats.brazierPlaced, W / 2, 362, '14px system-ui, sans-serif', '#cfe8ff', 'center');
+    text(ctx, 'BEST ' + state.best.toLocaleString('en-US'), W / 2, 388, '14px system-ui, sans-serif', '#9fb4d8', 'center');
     const pulse = 0.6 + 0.4 * Math.sin(time * 3);
     ctx.globalAlpha = pulse;
-    text(ctx, 'Press R to play again', W / 2, 424, 'bold 18px system-ui, sans-serif', '#ffd166', 'center');
+    text(ctx, 'Press R to play again', W / 2, 448, 'bold 18px system-ui, sans-serif', '#ffd166', 'center');
     ctx.globalAlpha = 1;
   }
 
@@ -750,6 +893,7 @@ export function createRenderer(canvas) {
     if (screen === 'play') drawBanner(state);
     if (screen === 'title') drawTitle(state, time, ui);
     if (screen === 'boon') drawBoon(state, ui);
+    if (screen === 'shop') drawShop(state, ui);
     if (screen === 'win') drawEnd(state, true, time);
     if (screen === 'over') drawEnd(state, false, time);
     if (screen === 'paused') drawPaused();
@@ -761,6 +905,7 @@ export function createRenderer(canvas) {
     SCREEN_TITLE: 'title',
     SCREEN_PLAY: 'play',
     SCREEN_BOON: 'boon',
+    SCREEN_SHOP: 'shop',
     SCREEN_WIN: 'win',
     SCREEN_OVER: 'over',
     SCREEN_PAUSED: 'paused',

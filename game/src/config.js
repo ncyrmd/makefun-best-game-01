@@ -74,6 +74,40 @@ export const GOLDEN = {
   lifeSeconds: 14,
 };
 
+// The Gloomlord: a crowned wisp-king that rises on nights 4 and 8. It
+// drifts for the hearth, calls minions with a gloom pulse every few seconds,
+// and pays a fortune in embers when it falls. Night 8's is the true
+// Gloomlord — bigger, tougher, and the last thing between the keeper and
+// the dawn.
+export const BOSS = {
+  nights: [4, 8],
+  hp: { 4: 14, 8: 24 },
+  radius: { 4: 46, 8: 58 },
+  speed: 26,
+  score: { 4: 500, 8: 1000 },
+  fuelHit: 25,
+  emberBounty: 15,
+  pulseInterval: 6,
+  pulseSpawn: 2,
+  normalMul: 0.8,
+};
+
+// The boss's numbers for a night, as a wisp definition.
+export function bossDefForNight(night) {
+  const hp = BOSS.hp[night] || BOSS.hp[4];
+  const radius = BOSS.radius[night] || BOSS.radius[4];
+  const score = BOSS.score[night] || BOSS.score[4];
+  return { hp, speed: BOSS.speed, radius, score, fuelHit: BOSS.fuelHit, fromNight: 4 };
+}
+
+export function isBossNight(night) {
+  return BOSS.nights.includes(night);
+}
+
+export function bossName(night) {
+  return night >= 8 ? 'THE GLOOMLORD' : "THE GLOOMLORD'S HERALD";
+}
+
 // One twist per night from night 2 on. The twist is named on the night banner
 // and in the HUD, so the player always knows what changed.
 export const MODIFIERS = [

@@ -5,13 +5,15 @@
 // feed the fire, and now the keeper can also plant braziers — fire bowls
 // that guard a patch of ground on their own.
 import {
-  BOONS, BRAZIER, COMBO, EMBER, FIELD, FLARE, GOLDEN, HEARTH,
-  HEARTH_FUEL, NIGHTS, PLAYER, STEP, WISP_KINDS, modifierForNight,
-  nightPlan,
+  BOONS, BOSS, BRAZIER, COMBO, EMBER, FIELD, FLARE, GOLDEN, HEARTH,
+  HEARTH_FUEL, NIGHTS, PLAYER, STEP, WISP_KINDS, bossDefForNight,
+  isBossNight, bossName, modifierForNight, nightPlan,
 } from './config.js';
 import { createRandom } from './random.js';
 import { canPlaceBrazier, makeBrazier, suggestSpot, updateBraziers } from './braziers.js';
 import { goldenChanceFor, nightMultipliers } from './modifiers.js';
+import { dashDamageTo, flareDamageTo, isBoss, makeBoss } from './boss.js';
+import { shopCost, shopTrack } from './shop.js';
 
 export const EVENT_BANISH = 1;
 export const EVENT_PICKUP = 2;
@@ -23,6 +25,7 @@ export const EVENT_FLARE = 64;
 export const EVENT_DASH = 128;
 export const EVENT_BRAZIER = 256;
 export const EVENT_GOLDEN = 512;
+export const EVENT_BOSS = 1024;
 
 // Action bits the step() call carries (see input.js for the same table).
 export const ACTION_DASH_BIT = 1;
@@ -35,13 +38,14 @@ function freshMods() {
     auraTickMul: 1, dropBonus: 0,
     brazierSlots: BRAZIER.maxSlots, brazierCostDelta: 0,
     goldenBonus: 0, goldenFromNight: GOLDEN.fromNight || 5, magnetBonus: 0,
+    shopRounds: 0, shopLevels: { oil: 0, well: 0, current: 0, rounds: 0 },
   };
 }
 
 function freshStats() {
   return {
     banished: 0, collected: 0, flares: 0, dashes: 0,
-    brazierPlaced: 0, brazierBurns: 0, goldenBanished: 0,
+    brazierPlaced: 0, brazierBurns: 0, goldenBanished: 0, bosses: 0,
   };
 }
 
@@ -54,6 +58,7 @@ function freshState(seed) {
     best: 0,
     boonChoices: [],
     boonsOwned: [],
+    boss: null,
     braziers: [],
     combo: 0,
     comboTimer: 0,
@@ -117,6 +122,9 @@ function spawnEdgePoint(state) {
 }
 
 function makeWisp(state, kind, x, y) {
+  // The Gloomlord is a wisp with a crown: its numbers come from the boss
+  // table, not the wisp table, and it carries a pulse timer.
+  if (kind === 'gloomlord') return makeBoss(state.rng, state.night, x, y);
   const def = WISP_KINDS[kind];
   return {
     kind, x, y,
@@ -160,6 +168,17 @@ function banishWisp(state, wisp, cause) {
   state.stats.banished += 1;
   popup(state, wisp.x, wisp.y - 14, '+' + gained, wisp.kind === 'golden' ? '#ffd700' : '#ffd166');
   burst(state, wisp.x, wisp.y, wisp.kind === 'golden' ? '#ffd700' : '#9fd8ff', wisp.kind === 'brute' ? 16 : 9, 120);
+  if (wisp.kind === 'gloomlord') {
+    // The Gloomlord falls: a fortune in embers, a shower of light, and the
+    // night's caller is gone — no shard drop, the bounty is the reward.
+    state.embers += BOSS.emberBounty;
+    state.stats.bosses += 1;
+    state.boss = null;
+    popup(state, wisp.x, wisp.y + 12, '+' + BOSS.emberBounty + ' ◆', '#c084fc');
+    burst(state, wisp.x, wisp.y, '#c084fc', 26, 220);
+    burst(state, wisp.x, wisp.y, '#ffd700', 14, 160);
+    return;
+  }
   if (wisp.kind === 'golden') {
     const bonus = GOLDEN.emberBonus + state.mods.goldenBonus;
     state.embers += bonus;
@@ -188,13 +207,26 @@ function startNight(state, night) {
   state.mult = nightMultipliers(state.modifier, state.mods);
   state.plan = nightPlan(night);
   state.toSpawn = Math.round(state.plan.total * state.mult.countMul);
+  // Boss nights send fewer ordinary wisps — the Gloomlord is the night.
+  if (isBossNight(night)) state.toSpawn = Math.round(state.toSpawn * BOSS.normalMul);
   state.spawned = 0;
   state.spawnTimer = state.plan.interval * 0.5;
   state.nightCleared = false;
   state.boonChoices = [];
+  state.boss = null;
   state.fuel = Math.min(state.fuelMax, state.fuel + HEARTH_FUEL.nightStartBonus);
   const twist = state.modifier.name ? ' — ' + state.modifier.name : '';
-  state.banner = { text: 'NIGHT ' + night + twist, timer: 2.6 };
+  const boss = isBossNight(night) ? ' · ' + bossName(night) : '';
+  state.banner = { text: 'NIGHT ' + night + twist + boss, timer: 2.6 };
+  if (isBossNight(night)) {
+    // The Gloomlord arrives with the night, from the trees.
+    const at = spawnEdgePoint(state);
+    const b = makeBoss(state.rng, night, at.x, at.y);
+    b.x = Math.max(60, Math.min(FIELD.width - 60, b.x));
+    b.y = Math.max(60, Math.min(FIELD.height - 60, b.y));
+    state.wisps.push(b);
+    state.boss = b;
+  }
 }
 
 function offerBoons(state) {
@@ -247,9 +279,13 @@ export function createWorldWithSeed(seed) {
   function spawnWisp(kind, x, y) {
     const w = makeWisp(state, kind, x, y);
     state.wisps.push(w);
+    if (kind === 'gloomlord') state.boss = w;
     return w;
   }
 
+  // A boon is picked between nights. It applies now, but the next night
+  // does NOT start yet: the keeper shops first, then begins the night from
+  // the shop screen (beginNextNight). The night stays cleared until then.
   function applyBoon(id) {
     const boon = BOONS.find((b) => b.id === id);
     if (!boon || state.boonsOwned.includes(id)) return false;
@@ -260,10 +296,38 @@ export function createWorldWithSeed(seed) {
       state.fuel = Math.min(state.fuelMax, state.fuel + 30);
     }
     state.boonChoices = [];
-    state.nightCleared = false;
-    if (state.night >= NIGHTS) return true;
+    return true;
+  }
+
+  // Buy one level of a shop track with embers. Returns { ok, reason }.
+  function buyShop(id) {
+    const track = shopTrack(id);
+    if (!track) return { ok: false, reason: 'no such upgrade' };
+    const cost = shopCost(state.mods, id);
+    if (cost === null) return { ok: false, reason: 'already at max level' };
+    if (state.embers < cost) return { ok: false, reason: 'not enough embers' };
+    state.embers -= cost;
+    const level = (state.mods.shopLevels[id] || 0) + 1;
+    state.mods.shopLevels[id] = level;
+    track.apply(state.mods, state);
+    burst(state, state.player.x, state.player.y, '#ffd166', 10, 90);
+    return { ok: true, reason: '' };
+  }
+
+  // Begin the next night from the shop screen. Only after a cleared night.
+  function beginNextNight() {
+    if (!state.nightCleared || state.night >= NIGHTS) return false;
     startNight(state, state.night + 1);
     return true;
+  }
+
+  // Call the Gloomlord at (x, y) — for shot staging and tests. The night's
+  // own boss, if any, is spawned by startNight instead.
+  function spawnBoss(x, y) {
+    const b = makeBoss(state.rng, state.night, x, y);
+    state.wisps.push(b);
+    state.boss = b;
+    return b;
   }
 
   function stepAmbient(dt) {
@@ -325,13 +389,14 @@ export function createWorldWithSeed(seed) {
       burst(state, p.x, p.y, '#cfe8ff', 6, 70);
     }
     // Dash strike: wisps in the keeper's path burn as the dash passes.
+    // Tough wisps take a glancing hit instead of burning at once.
     if (p.dashTime > 0) {
       for (const w of state.wisps.slice()) {
         if (w.lastDashHit === p.dashId) continue;
         const d = Math.hypot(w.x - p.x, w.y - p.y);
         if (d < p.radius + w.radius + 12) {
           w.lastDashHit = p.dashId;
-          w.hp -= w.kind === 'brute' ? 2 : 99;
+          w.hp -= dashDamageTo(w);
           w.flash = 0.25;
           if (w.hp <= 0) {
             banishWisp(state, w, 'dash');
@@ -354,7 +419,7 @@ export function createWorldWithSeed(seed) {
       for (const w of state.wisps.slice()) {
         const d = Math.hypot(w.x - p.x, w.y - p.y);
         if (d < radius + w.radius) {
-          w.hp -= w.kind === 'brute' ? FLARE.bruteDamage : 99;
+          w.hp -= flareDamageTo(w, state.mods.shopRounds);
           w.flash = 0.3;
           if (w.hp <= 0) {
             banishWisp(state, w, 'flare');
@@ -422,6 +487,7 @@ export function createWorldWithSeed(seed) {
     // --- wisp movement + hearth hits ---
     for (const w of state.wisps.slice()) {
       if (w.flash > 0) w.flash -= dt;
+      if (isBoss(w) && w.pulseFlash > 0) w.pulseFlash -= dt;
       w.wobble += w.wobbleSpeed * dt;
       let tx = HEARTH.x - w.x;
       let ty = HEARTH.y - w.y;
@@ -445,6 +511,7 @@ export function createWorldWithSeed(seed) {
       const hd = Math.hypot(w.x - HEARTH.x, w.y - HEARTH.y);
       if (hd < HEARTH.radius + w.radius) {
         if (w.kind === 'golden') { removeWisp(state, w); continue; }
+        if (isBoss(w)) state.boss = null;
         state.fuel -= w.fuelHit;
         state.shake = 1;
         result.mask |= EVENT_HEARTH_HIT;
@@ -454,6 +521,32 @@ export function createWorldWithSeed(seed) {
           state.fuel = 0;
           state.over = true;
           result.mask |= EVENT_OVER;
+        }
+      }
+    }
+
+    // --- the Gloomlord's pulse: every few seconds it calls minions from
+    // the dark. The caller is the night's real threat, not its own slow
+    // walk — so the pulse is what the keeper must answer.
+    if (state.boss && !state.over && !state.won) {
+      const boss = state.boss;
+      boss.pulseTimer -= dt;
+      if (boss.pulseTimer <= 0) {
+        boss.pulseTimer = BOSS.pulseInterval;
+        boss.pulseFlash = 0.6;
+        result.mask |= EVENT_BOSS;
+        popup(state, boss.x, boss.y - boss.radius - 18, 'THE GLOOMLORD CALLS', '#c084fc');
+        burst(state, boss.x, boss.y, '#c084fc', 18, 180);
+        if (state.wisps.length < 40) {
+          for (let i = 0; i < BOSS.pulseSpawn; i++) {
+            const kind = pickKind(state);
+            const mx = boss.x + state.rng.range(-50, 50);
+            const my = boss.y + state.rng.range(-50, 50);
+            const m = makeWisp(state, kind === 'golden' ? 'wisp' : kind,
+              Math.max(20, Math.min(FIELD.width - 20, mx)),
+              Math.max(20, Math.min(FIELD.height - 20, my)));
+            state.wisps.push(m);
+          }
         }
       }
     }
@@ -531,6 +624,10 @@ export function createWorldWithSeed(seed) {
     stepAmbient,
     reset,
     applyBoon,
+    buyShop,
+    beginNextNight,
+    spawnBoss,
+    shopCost: (id) => shopCost(state.mods, id),
     auraRadius,
     flareCost,
     brazierCost,

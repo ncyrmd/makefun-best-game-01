@@ -123,6 +123,17 @@ export function createAudio() {
     boon() {
       [523, 659, 784].forEach((frequency, i) => tone({ frequency, duration: 0.3, type: 'triangle', volume: 0.14, delay: i * 0.07 }));
     },
+    /** A coin chime for a shop purchase. */
+    buy() {
+      tone({ frequency: 1047, duration: 0.12, type: 'sine', volume: 0.16 });
+      tone({ frequency: 1319, duration: 0.2, type: 'sine', volume: 0.16, delay: 0.08 });
+    },
+    /** The Gloomlord's roar: a low sawtooth fall under a burst of noise. */
+    boss() {
+      tone({ frequency: 90, endFrequency: 42, duration: 0.8, type: 'sawtooth', volume: 0.22 });
+      noise({ duration: 0.5, volume: 0.1, lowpass: 400 });
+      tone({ frequency: 55, endFrequency: 38, duration: 0.9, type: 'triangle', volume: 0.18, delay: 0.1 });
+    },
     nightStart() {
       tone({ frequency: 330, endFrequency: 330, duration: 0.2, type: 'triangle', volume: 0.14 });
       tone({ frequency: 495, duration: 0.25, type: 'triangle', volume: 0.12, delay: 0.12 });
