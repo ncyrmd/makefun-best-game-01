@@ -6,11 +6,11 @@
 
 An entry for [make.fun — Make the best game](https://make.fun/bounty/best-game-01).
 
-**Emberkeeper** — keep the last hearth burning through eight nights of gloom.
-You are the keeper of the only fire left in a dark forest. Gloom wisps drift
-in from the trees to steal its fuel. Your lantern burns any wisp that comes
-too close; the ember shards they drop feed the fire. Survive all eight nights
-and the dawn breaks.
+**Emberkeeper: The Gloomlord Rises** — keep the last hearth burning through
+eight nights of gloom. You are the keeper of the only fire left in a dark
+forest. Gloom wisps drift in from the trees to steal its fuel. Your lantern
+burns any wisp that comes too close; the ember shards they drop feed the
+fire. Survive all eight nights and the dawn breaks.
 
 ## How to play
 
@@ -21,6 +21,9 @@ and the dawn breaks.
 - **Build a brazier** — B, then click a spot. A fire bowl that burns wisps
   in its light until its fuel gutters out. Costs 5 embers.
 - **Pause** — P or Esc. **Sound** — M. **Restart** — R on the end screens.
+- **Hearth shop** — between nights, after the boon: spend embers on Lantern
+  Oil, a Deep Well, Swift Current or Ember Rounds. **1–4** buy a track,
+  **Enter** begins the next night.
 
 Your lantern's light slows wisps and burns them over time. Banishing wisps
 builds a combo multiplier (up to x5). Wisps that reach the hearth steal fuel;
@@ -34,7 +37,9 @@ Four kinds of wisp stalk the fire: drifting **wisps**, quick **darts**,
 from the second carries a twist — Ember Rain, Swift Gloom, Thick Gloom,
 Golden Hour, Iron Gloom, Ember Drought, The Longest Night — named on the
 night banner and in the HUD. Eleven boons can be earned between nights,
-including Brazier Craft, Golden Touch and Ember Magnet.
+including Brazier Craft, Golden Touch and Ember Magnet. And on nights 4 and
+8 the **Gloomlord** rises — a crowned wisp-king that calls minions from the
+dark every six seconds. Banish it for 15 embers and a fortune in score.
 
 ## Run it
 
@@ -44,5 +49,5 @@ node serve.ts
 ```
 
 No build step, no network requests — plain static files under `game/`.
-Screenshots are deterministic: `?shot=start|play|boon|end&seed=N` stages each
+Screenshots are deterministic: `?shot=start|play|boon|shop|end&seed=N` stages each
 scene from the real rules.
