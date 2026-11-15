@@ -1,6 +1,6 @@
-// Emberkeeper v2 — screenshot staging and the headless autopilot.
+// Emberkeeper v3 — screenshot staging and the headless autopilot.
 // stageShot(kind, world) arranges a fixed scene for one of the four
-// screenshots (start / play / boon / end) and returns { screen, best }.
+// screenshots (start / play / shop / end) and returns { screen, best }.
 // autopilot(state, world) plays the game well enough to win headless, so
 // balance can be tested without a browser. actionsOf(pilot) turns a pilot
 // decision into the step() action bitmask.
@@ -13,23 +13,27 @@ export function stageShot(kind, world) {
     return { screen: 'title', best: s.best || 0 };
   }
   if (kind === 'play') {
-    // Night 3, mid-fight: two braziers burning, a mixed wave on screen, a
-    // golden wisp in the trees, shards to grab, combo running.
-    s.night = 3;
-    s.modifier = modifierForNight(3);
-    s.plan = nightPlan(3);
+    // Night 4, mid-fight with the Gloomlord: the crowned wisp-king stands
+    // wounded in the trees with its minions, two braziers burning, a golden
+    // wisp in the corner, shards to grab, combo running.
+    s.night = 4;
+    s.modifier = modifierForNight(4);
+    s.plan = nightPlan(4);
     s.toSpawn = 30;
-    s.spawned = 20;
-    s.score = 180;
-    s.fuel = 78;
-    s.embers = 12;
-    s.combo = 3;
+    s.spawned = 25;
+    s.score = 420;
+    s.fuel = 71;
+    s.embers = 18;
+    s.combo = 4;
     s.comboTimer = 2;
     s.banner = { text: '', timer: 0 };
     s.player.x = 480;
-    s.player.y = 440;
+    s.player.y = 470;
     world.placeBrazier(300, 420);
     world.placeBrazier(660, 200);
+    const boss = world.spawnBoss(620, 180);
+    boss.hp = 8;
+    boss.pulseFlash = 0.4;
     const spots = [
       ['wisp', 300, 180], ['wisp', 620, 140], ['wisp', 760, 330],
       ['wisp', 200, 380], ['wisp', 540, 120], ['dart', 700, 260],
@@ -57,20 +61,34 @@ export function stageShot(kind, world) {
     s.boonChoices = chosen.map((b) => ({ id: b.id, name: b.name, blurb: b.blurb }));
     return { screen: 'boon', best: s.best || 0, choices: s.boonChoices };
   }
+  if (kind === 'shop') {
+    // Night 2 cleared and the boon taken: the hearth shop, one Lantern Oil
+    // already bought, 24 embers left to spend on the other tracks.
+    s.night = 2;
+    s.nightCleared = true;
+    s.spawned = s.toSpawn;
+    s.score = 380;
+    s.fuel = 74;
+    s.embers = 24;
+    s.mods.shopLevels = { oil: 1, well: 0, current: 0, rounds: 0 };
+    s.mods.auraBonus = 14;
+    return { screen: 'shop', best: s.best || 0 };
+  }
   // end: the win screen — a golden dawn after all eight nights.
   s.night = 8;
   s.won = true;
   s.over = true;
-  s.score = 3240;
-  s.best = Math.max(s.best || 0, 3240);
-  s.fuel = 34;
-  s.stats.banished = 212;
-  s.stats.collected = 148;
-  s.stats.brazierPlaced = 5;
-  s.stats.goldenBanished = 6;
-  s.stats.flares = 23;
-  s.stats.dashes = 41;
-  return { screen: 'win', best: Math.max(s.best || 0, 3240) };
+  s.score = 4860;
+  s.best = Math.max(s.best || 0, 4860);
+  s.fuel = 41;
+  s.stats.banished = 268;
+  s.stats.collected = 191;
+  s.stats.brazierPlaced = 6;
+  s.stats.goldenBanished = 8;
+  s.stats.bosses = 2;
+  s.stats.flares = 31;
+  s.stats.dashes = 57;
+  return { screen: 'win', best: Math.max(s.best || 0, 4860) };
 }
 
 export function idlePilot() {
@@ -97,12 +115,18 @@ export function autopilot(state, world) {
   let dash = false;
   let flare = false;
 
-  // Urgency: the wisp nearest the hearth is the one that kills the run.
+  // Urgency: the wisp nearest the hearth is the one that kills the run —
+  // unless the Gloomlord stands, in which case it is the caller to answer:
+  // every pulse births more wisps, so the boss outranks a lone wisp.
   let threat = null;
   let threatD = Infinity;
   for (const w of state.wisps) {
     const d = Math.hypot(w.x - hx, w.y - hy);
     if (d < threatD) { threatD = d; threat = w; }
+  }
+  if (state.boss && threatD > 80) {
+    threat = state.boss;
+    threatD = Math.hypot(state.boss.x - hx, state.boss.y - hy);
   }
   // A shard worth grabbing when nothing is about to hit the hearth.
   let shard = null;
@@ -134,7 +158,8 @@ export function autopilot(state, world) {
     const dist = Math.hypot(dx, dy);
     if (dist > 190 && p.dashCooldown <= 0) dash = true;
   }
-  // Flare when a cluster is on top of the keeper and the purse allows it.
+  // Flare when a cluster is on top of the keeper and the purse allows it —
+  // or when the Gloomlord itself is in range, since a flare wounds it.
   if (state.embers >= world.flareCost()) {
     let near = 0;
     const fr = 150 + (state.mods ? state.mods.flareRadiusBonus : 0);
@@ -142,6 +167,7 @@ export function autopilot(state, world) {
       if (Math.hypot(w.x - p.x, w.y - p.y) < fr) near += 1;
     }
     if (near >= 3) flare = true;
+    if (state.boss && Math.hypot(state.boss.x - p.x, state.boss.y - p.y) < fr) flare = true;
   }
   return { move, dash, flare };
 }
