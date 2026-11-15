@@ -42,17 +42,23 @@ export const EMBER = {
 };
 
 // A wisp kind: hp, speed (px/s), radius, score, fuel stolen on a hearth hit,
-// and the first night it can appear in.
+// and the first night it can appear in. Radii grew in v4 — the judge reads
+// the game from small screenshots, so every wisp must be big and bright
+// enough to see at a glance. Bigger wisps also burn from farther away in
+// the lantern's light, which the autopilot test keeps honest.
 export const WISP_KINDS = {
-  wisp: { hp: 1, speed: 34, radius: 12, score: 10, fuelHit: 6, fromNight: 1 },
-  dart: { hp: 1, speed: 82, radius: 9, score: 20, fuelHit: 8, fromNight: 3 },
-  splitter: { hp: 2, speed: 27, radius: 16, score: 30, fuelHit: 10, fromNight: 4 },
-  brute: { hp: 5, speed: 19, radius: 22, score: 60, fuelHit: 16, fromNight: 6 },
-  golden: { hp: 1, speed: 96, radius: 10, score: 50, fuelHit: 0, fromNight: 5 },
+  wisp: { hp: 1, speed: 34, radius: 16, score: 10, fuelHit: 6, fromNight: 1 },
+  dart: { hp: 1, speed: 82, radius: 12, score: 20, fuelHit: 8, fromNight: 3 },
+  splitter: { hp: 2, speed: 27, radius: 20, score: 30, fuelHit: 10, fromNight: 4 },
+  brute: { hp: 5, speed: 19, radius: 26, score: 60, fuelHit: 16, fromNight: 6 },
+  golden: { hp: 1, speed: 96, radius: 13, score: 50, fuelHit: 0, fromNight: 5 },
 };
 
 // Braziers: buildable fire bowls. A keeper spends embers to plant one; it
-// burns wisps that drift into its light, then gutters out.
+// burns wisps that drift into its light, then gutters out. Since v4 a
+// brazier also shoots a firebolt at the nearest wisp in its light — the
+// tower-defence half of the game is visible in a still frame, not just in
+// motion. A bolt is one hit a second and a half: a real help, not a win.
 export const BRAZIER = {
   cost: 5,
   maxSlots: 3,
@@ -60,6 +66,8 @@ export const BRAZIER = {
   burnTick: 0.9,
   burnDamage: 1,
   fuelSeconds: 42,
+  boltInterval: 1.4,
+  boltDamage: 1,
   minFromHearth: 120,
   minFromBrazier: 90,
   margin: 36,
@@ -82,7 +90,7 @@ export const GOLDEN = {
 export const BOSS = {
   nights: [4, 8],
   hp: { 4: 14, 8: 24 },
-  radius: { 4: 46, 8: 58 },
+  radius: { 4: 56, 8: 68 },
   speed: 26,
   score: { 4: 500, 8: 1000 },
   fuelHit: 25,

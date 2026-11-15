@@ -45,7 +45,7 @@ function freshMods() {
 function freshStats() {
   return {
     banished: 0, collected: 0, flares: 0, dashes: 0,
-    brazierPlaced: 0, brazierBurns: 0, goldenBanished: 0, bosses: 0,
+    brazierPlaced: 0, brazierBurns: 0, bolts: 0, goldenBanished: 0, bosses: 0,
   };
 }
 
@@ -59,6 +59,7 @@ function freshState(seed) {
     boonChoices: [],
     boonsOwned: [],
     boss: null,
+    bolts: [],
     braziers: [],
     combo: 0,
     comboTimer: 0,
@@ -468,9 +469,14 @@ export function createWorldWithSeed(seed) {
       }
     }
 
-    // --- braziers burn ---
+    // --- braziers burn + shoot firebolts ---
     if (state.braziers.length) {
-      const { banished, expired } = updateBraziers(state.braziers, state.wisps, dt);
+      const { banished, expired, bolts } = updateBraziers(state.braziers, state.wisps, dt);
+      for (const bolt of bolts) {
+        state.bolts.push({ ...bolt, life: 0.22, maxLife: 0.22 });
+        state.stats.bolts += 1;
+      }
+      if (state.bolts.length > 24) state.bolts.splice(0, state.bolts.length - 24);
       for (const w of banished) {
         banishWisp(state, w, 'brazier');
         removeWisp(state, w);
@@ -587,11 +593,15 @@ export function createWorldWithSeed(seed) {
       }
     }
 
-    // --- particles + popups age ---
+    // --- particles + popups + bolt tracers age ---
     for (let i = state.particles.length - 1; i >= 0; i--) {
       const pt = state.particles[i];
       pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.life -= dt;
       if (pt.life <= 0) state.particles.splice(i, 1);
+    }
+    for (let i = state.bolts.length - 1; i >= 0; i--) {
+      state.bolts[i].life -= dt;
+      if (state.bolts[i].life <= 0) state.bolts.splice(i, 1);
     }
     for (let i = state.popups.length - 1; i >= 0; i--) {
       const pp = state.popups[i];

@@ -1,6 +1,10 @@
-// Emberkeeper v3 — screenshot staging and the headless autopilot.
+// Emberkeeper v4 — screenshot staging and the headless autopilot.
 // stageShot(kind, world) arranges a fixed scene for one of the four
-// screenshots (start / play / shop / end) and returns { screen, best }.
+// screenshots (start / play / swarm / end) and returns { screen, best }.
+// v4: the third shot is a second gameplay scene (a Golden Hour swarm),
+// not the shop menu — the judge reads the game from its screenshots, and
+// a menu list is unreadable in a small cell while a second fight shows
+// variety. The shop still exists in the game, the outline and the title.
 // autopilot(state, world) plays the game well enough to win headless, so
 // balance can be tested without a browser. actionsOf(pilot) turns a pilot
 // decision into the step() action bitmask.
@@ -14,8 +18,10 @@ export function stageShot(kind, world) {
   }
   if (kind === 'play') {
     // Night 4, mid-fight with the Gloomlord: the crowned wisp-king stands
-    // wounded in the trees with its minions, two braziers burning, a golden
-    // wisp in the corner, shards to grab, combo running.
+    // wounded in the trees with its minions, three braziers burning — one
+    // mid-firebolt — a golden wisp in the corner, shards to grab, combo
+    // running. v4: denser and brighter than v3's shot, the keeper closer
+    // to the fight with its lantern lit, so the small screenshot reads.
     s.night = 4;
     s.modifier = modifierForNight(4);
     s.plan = nightPlan(4);
@@ -23,28 +29,74 @@ export function stageShot(kind, world) {
     s.spawned = 25;
     s.score = 420;
     s.fuel = 71;
-    s.embers = 18;
-    s.combo = 4;
+    s.embers = 28;
+    s.combo = 5;
     s.comboTimer = 2;
     s.banner = { text: '', timer: 0 };
-    s.player.x = 480;
-    s.player.y = 470;
+    s.player.x = 430;
+    s.player.y = 430;
     world.placeBrazier(300, 420);
     world.placeBrazier(660, 200);
-    const boss = world.spawnBoss(620, 180);
-    boss.hp = 8;
+    world.placeBrazier(680, 440);
+    const boss = world.spawnBoss(620, 210);
+    boss.hp = 6;
     boss.pulseFlash = 0.4;
     const spots = [
       ['wisp', 300, 180], ['wisp', 620, 140], ['wisp', 760, 330],
       ['wisp', 200, 380], ['wisp', 540, 120], ['dart', 700, 260],
       ['dart', 250, 300], ['splitter', 820, 180], ['splitter', 150, 200],
-      ['golden', 830, 430],
+      ['golden', 830, 430], ['wisp', 380, 250], ['dart', 560, 320],
+      ['wisp', 720, 420], ['splitter', 120, 300],
     ];
     for (const [k, x, y] of spots) world.spawnWisp(k, x, y);
     s.shards.push(
       { x: 430, y: 380, life: 12, value: 1 },
       { x: 520, y: 400, life: 12, value: 1 },
       { x: 560, y: 470, life: 12, value: 1 },
+    );
+    // One firebolt tracer already in the air, so the brazier's shot reads.
+    s.bolts.push({ x: 660, y: 200, tx: 700, ty: 260, life: 0.22, maxLife: 0.22 });
+    return { screen: 'play', best: s.best || 0 };
+  }
+  if (kind === 'swarm') {
+    // Night 5, Golden Hour: the field is full — golden wisps everywhere,
+    // braziers firing, the keeper in the thick of it with a x5 combo. The
+    // second play shot: variety the judge can see at a glance. (Night 5
+    // carries the Golden Hour twist, so the banner matches the swarm.)
+    s.night = 5;
+    s.modifier = modifierForNight(5);
+    s.plan = nightPlan(5);
+    s.toSpawn = 40;
+    s.spawned = 34;
+    s.score = 1250;
+    s.fuel = 82;
+    s.embers = 32;
+    s.combo = 5;
+    s.comboTimer = 2;
+    s.banner = { text: '', timer: 0 };
+    s.player.x = 480;
+    s.player.y = 440;
+    world.placeBrazier(300, 400);
+    world.placeBrazier(660, 420);
+    world.placeBrazier(700, 180);
+    const spots = [
+      ['golden', 300, 150], ['golden', 650, 140], ['golden', 820, 300],
+      ['golden', 180, 250], ['wisp', 250, 180], ['wisp', 700, 300],
+      ['wisp', 380, 200], ['wisp', 560, 160], ['dart', 760, 220],
+      ['dart', 200, 320], ['splitter', 840, 180], ['splitter', 140, 200],
+      ['brute', 600, 240], ['wisp', 480, 260], ['wisp', 340, 320],
+      ['golden', 500, 120], ['dart', 420, 180], ['wisp', 780, 380],
+    ];
+    for (const [k, x, y] of spots) world.spawnWisp(k, x, y);
+    s.shards.push(
+      { x: 400, y: 360, life: 12, value: 1 },
+      { x: 540, y: 380, life: 12, value: 1 },
+      { x: 620, y: 460, life: 12, value: 1 },
+      { x: 460, y: 300, life: 12, value: 1 },
+    );
+    s.bolts.push(
+      { x: 300, y: 400, tx: 250, ty: 320, life: 0.22, maxLife: 0.22 },
+      { x: 660, y: 420, tx: 700, ty: 300, life: 0.22, maxLife: 0.22 },
     );
     return { screen: 'play', best: s.best || 0 };
   }

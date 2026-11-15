@@ -5,7 +5,7 @@
 import { BRAZIER, FIELD, HEARTH } from './config.js';
 
 // A fresh brazier at (x, y). fuel counts down in seconds; burnTimer counts
-// up to the next burn tick.
+// up to the next burn tick; boltTimer counts up to the next firebolt.
 export function makeBrazier(x, y) {
   return {
     x, y,
@@ -13,6 +13,7 @@ export function makeBrazier(x, y) {
     fuel: BRAZIER.fuelSeconds,
     maxFuel: BRAZIER.fuelSeconds,
     burnTimer: 0,
+    boltTimer: 0,
     born: 0,
   };
 }
@@ -38,29 +39,52 @@ export function canPlaceBrazier(list, x, y, slots) {
 }
 
 // One burn step for every live brazier. Wisps inside a brazier's light take
-// burnDamage each burnTick. Returns { banished, expired }: wisps whose hp
-// dropped to zero (the world scores and drops shards for them) and braziers
-// whose fuel ran out (the world puffs them away).
+// burnDamage each burnTick. Every boltInterval a brazier also shoots one
+// firebolt — a glowing tracer the world draws — at the nearest wisp in its
+// light for boltDamage. Returns { banished, expired, bolts }: wisps whose hp
+// dropped to zero (the world scores and drops shards for them), braziers
+// whose fuel ran out (the world puffs them away), and the bolts fired this
+// step as { x, y, tx, ty } tracers for the renderer.
 export function updateBraziers(list, wisps, dt) {
   const banished = [];
   const expired = [];
+  const bolts = [];
   for (const b of list) {
     b.fuel -= dt;
     if (b.fuel <= 0) { expired.push(b); continue; }
     b.burnTimer += dt;
-    if (b.burnTimer < BRAZIER.burnTick) continue;
-    b.burnTimer = 0;
-    for (const w of wisps) {
-      if (w.hp <= 0) continue;
-      const d = Math.hypot(w.x - b.x, w.y - b.y);
-      if (d < b.radius + w.radius) {
-        w.hp -= BRAZIER.burnDamage;
-        w.flash = 0.25;
-        if (w.hp <= 0) banished.push(w);
+    if (b.burnTimer >= BRAZIER.burnTick) {
+      b.burnTimer = 0;
+      for (const w of wisps) {
+        if (w.hp <= 0) continue;
+        const d = Math.hypot(w.x - b.x, w.y - b.y);
+        if (d < b.radius + w.radius) {
+          w.hp -= BRAZIER.burnDamage;
+          w.flash = 0.25;
+          if (w.hp <= 0) banished.push(w);
+        }
+      }
+    }
+    // Firebolt: one shot at the nearest wisp inside the light.
+    b.boltTimer += dt;
+    if (b.boltTimer >= BRAZIER.boltInterval) {
+      let target = null;
+      let targetD = Infinity;
+      for (const w of wisps) {
+        if (w.hp <= 0) continue;
+        const d = Math.hypot(w.x - b.x, w.y - b.y);
+        if (d < b.radius + w.radius && d < targetD) { targetD = d; target = w; }
+      }
+      if (target) {
+        b.boltTimer = 0;
+        target.hp -= BRAZIER.boltDamage;
+        target.flash = 0.25;
+        bolts.push({ x: b.x, y: b.y, tx: target.x, ty: target.y });
+        if (target.hp <= 0) banished.push(target);
       }
     }
   }
-  return { banished, expired };
+  return { banished, expired, bolts };
 }
 
 // A good default spot for the autopilot and for shot staging: the ring around

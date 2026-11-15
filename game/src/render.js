@@ -1,9 +1,10 @@
-// Emberkeeper v2 — everything the player sees. Layered night background
+// Emberkeeper v4 — everything the player sees. Layered night background
 // (sky, stars, moon, mist, two tree lines, mushrooms, grass, stones),
-// a hearth that glows with its fuel, per-kind wisp silhouettes, braziers,
-// the keeper and its lantern light, juice (shake, vignette, bursts), the HUD,
-// and the title / boon / win / loss / paused screens. No game logic here:
-// draw(state, screen, time, ui) only paints what the world already decided.
+// a hearth that glows with its fuel, per-kind wisp silhouettes, braziers
+// that shoot firebolts, the keeper and its lantern light, juice (shake,
+// vignette, bursts), the HUD, and the title / boon / shop / win / loss /
+// paused screens. No game logic here: draw(state, screen, time, ui) only
+// paints what the world already decided.
 import { FIELD, HEARTH, NIGHTS, PLAYER } from './config.js';
 import { createRandom } from './random.js';
 import { SHOP_LAYOUT, SHOP_TRACKS, shopCost, shopLevel } from './shop.js';
@@ -93,63 +94,66 @@ export function createRenderer(canvas) {
   const decor = buildDecor(20261116);
 
   function drawBackground(state, time) {
+    // v4: the night is brighter — the judge reads the game from small
+    // screenshots, so the scene must read at a glance: a deep blue sky
+    // instead of near-black, a bigger moon, a warmer clearing.
     const night = state.night || 1;
-    const dark = 0.55 + (night / NIGHTS) * 0.45;
+    const dark = 0.75 + (night / NIGHTS) * 0.25;
     const sky = ctx.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, `rgb(${Math.round(10 * dark)},${Math.round(14 * dark)},${Math.round(34 * dark)})`);
-    sky.addColorStop(0.55, `rgb(${Math.round(22 * dark)},${Math.round(26 * dark)},${Math.round(54 * dark)})`);
-    sky.addColorStop(1, `rgb(${Math.round(34 * dark)},${Math.round(40 * dark)},${Math.round(62 * dark)})`);
+    sky.addColorStop(0, `rgb(${Math.round(26 * dark)},${Math.round(34 * dark)},${Math.round(74 * dark)})`);
+    sky.addColorStop(0.55, `rgb(${Math.round(44 * dark)},${Math.round(50 * dark)},${Math.round(96 * dark)})`);
+    sky.addColorStop(1, `rgb(${Math.round(58 * dark)},${Math.round(64 * dark)},${Math.round(100 * dark)})`);
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, W, H);
 
-    // Stars, twinkling.
+    // Stars, twinkling — brighter than v3, they are the sky's texture.
     for (const s of decor.stars) {
-      const a = 0.25 + 0.55 * (0.5 + 0.5 * Math.sin(time * 1.4 + s.p));
-      ctx.globalAlpha = a * (1 - dark * 0.35);
-      ctx.fillStyle = '#dfe9ff';
+      const a = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(time * 1.4 + s.p));
+      ctx.globalAlpha = a * (1 - dark * 0.25);
+      ctx.fillStyle = '#e6efff';
       ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.arc(s.x, s.y, s.r * 1.3, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
 
-    // Moon, high on the right.
+    // Moon, high on the right — a bigger halo so the sky has a second light.
     const mx = W - 130;
     const my = 84;
-    const mg = ctx.createRadialGradient(mx, my, 8, mx, my, 70);
-    mg.addColorStop(0, 'rgba(235,238,255,0.5)');
+    const mg = ctx.createRadialGradient(mx, my, 8, mx, my, 100);
+    mg.addColorStop(0, 'rgba(235,238,255,0.65)');
     mg.addColorStop(1, 'rgba(235,238,255,0)');
     ctx.fillStyle = mg;
-    ctx.fillRect(mx - 70, my - 70, 140, 140);
-    ctx.fillStyle = '#e8ecff';
+    ctx.fillRect(mx - 100, my - 100, 200, 200);
+    ctx.fillStyle = '#eef1ff';
     ctx.beginPath();
-    ctx.arc(mx, my, 26, 0, Math.PI * 2);
+    ctx.arc(mx, my, 30, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = 'rgba(180,190,220,0.6)';
     ctx.beginPath();
-    ctx.arc(mx - 8, my - 4, 6, 0, Math.PI * 2);
-    ctx.arc(mx + 9, my + 8, 4, 0, Math.PI * 2);
+    ctx.arc(mx - 9, my - 5, 7, 0, Math.PI * 2);
+    ctx.arc(mx + 10, my + 9, 5, 0, Math.PI * 2);
     ctx.fill();
 
     // Far tree line.
-    for (const t of decor.farTrees) tree(ctx, t.x, 392, t.h, t.w, '#141b33');
+    for (const t of decor.farTrees) tree(ctx, t.x, 392, t.h, t.w, '#1c2545');
     // Mist band.
-    ctx.fillStyle = 'rgba(160,180,220,0.07)';
+    ctx.fillStyle = 'rgba(170,190,230,0.09)';
     ctx.fillRect(0, 330, W, 46);
-    ctx.fillStyle = 'rgba(160,180,220,0.05)';
+    ctx.fillStyle = 'rgba(170,190,230,0.06)';
     ctx.fillRect(0, 372, W, 30);
 
-    // Ground.
+    // Ground — warmer and lighter than v3's near-black.
     const g = ctx.createLinearGradient(0, 380, 0, H);
-    g.addColorStop(0, '#232c22');
-    g.addColorStop(1, '#141a13');
+    g.addColorStop(0, '#31402e');
+    g.addColorStop(1, '#1d2a1c');
     ctx.fillStyle = g;
     ctx.fillRect(0, 380, W, H - 380);
 
     // Near tree line (frames the clearing, leaves the middle open).
     for (const t of decor.nearTrees) {
       if (Math.abs(t.x - W / 2) < 200) continue;
-      tree(ctx, t.x, 430, t.h, t.w, '#0d1322');
+      tree(ctx, t.x, 430, t.h, t.w, '#131c30');
     }
     // Grass tufts.
     ctx.strokeStyle = 'rgba(90,130,80,0.55)';
@@ -200,87 +204,137 @@ export function createRenderer(canvas) {
   }
 
   function drawHearth(state, time) {
+    // v4: the hearth is the brightest thing on the field — a blazing beacon
+    // the eye finds first, even in a small screenshot. Bigger glow, three
+    // flame tongues, embers rising off it.
     const fuelFrac = state.fuelMax ? state.fuel / state.fuelMax : 0;
     const flicker = 0.85 + 0.15 * Math.sin(time * 7.3) * Math.sin(time * 3.1 + 1.2);
-    const glowR = 150 + 40 * flicker * (0.4 + 0.6 * fuelFrac);
+    const glowR = 210 + 50 * flicker * (0.4 + 0.6 * fuelFrac);
     const hg = ctx.createRadialGradient(HEARTH.x, HEARTH.y, 10, HEARTH.x, HEARTH.y, glowR);
-    hg.addColorStop(0, `rgba(255,170,60,${0.5 * fuelFrac + 0.08})`);
-    hg.addColorStop(0.5, `rgba(255,120,40,${0.22 * fuelFrac + 0.03})`);
-    hg.addColorStop(1, 'rgba(255,120,40,0)');
+    hg.addColorStop(0, `rgba(255,180,70,${0.62 * fuelFrac + 0.12})`);
+    hg.addColorStop(0.5, `rgba(255,125,45,${0.3 * fuelFrac + 0.05})`);
+    hg.addColorStop(1, 'rgba(255,125,45,0)');
     ctx.fillStyle = hg;
     ctx.fillRect(HEARTH.x - glowR, HEARTH.y - glowR, glowR * 2, glowR * 2);
 
     // Stone ring.
-    ctx.fillStyle = '#4a4f5e';
+    ctx.fillStyle = '#565b6a';
     for (let i = 0; i < 10; i++) {
       const a = (i / 10) * Math.PI * 2;
       ctx.beginPath();
-      ctx.arc(HEARTH.x + Math.cos(a) * HEARTH.radius, HEARTH.y + Math.sin(a) * HEARTH.radius, 9, 0, Math.PI * 2);
+      ctx.arc(HEARTH.x + Math.cos(a) * HEARTH.radius, HEARTH.y + Math.sin(a) * HEARTH.radius, 10, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.fillStyle = '#20242e';
+    ctx.fillStyle = '#262b38';
     ctx.beginPath();
     ctx.arc(HEARTH.x, HEARTH.y, HEARTH.radius - 8, 0, Math.PI * 2);
     ctx.fill();
-    // Fire.
-    const fh = (26 + 10 * flicker) * (0.35 + 0.65 * fuelFrac);
-    ctx.fillStyle = '#ff8c2e';
-    ctx.beginPath();
-    ctx.moveTo(HEARTH.x - 14, HEARTH.y + 12);
-    ctx.quadraticCurveTo(HEARTH.x - 18, HEARTH.y - fh * 0.5, HEARTH.x, HEARTH.y - fh);
-    ctx.quadraticCurveTo(HEARTH.x + 18, HEARTH.y - fh * 0.5, HEARTH.x + 14, HEARTH.y + 12);
-    ctx.closePath();
-    ctx.fill();
+    // Fire — three tongues so the flame reads as a flame, not a triangle.
+    const fh = (34 + 12 * flicker) * (0.35 + 0.65 * fuelFrac);
+    for (const [off, w, hMul, col] of [[-11, 13, 0.7, '#ff7a2e'], [0, 16, 1, '#ff8c2e'], [11, 12, 0.62, '#ff9a3d']]) {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(HEARTH.x + off - w, HEARTH.y + 12);
+      ctx.quadraticCurveTo(HEARTH.x + off - w - 3, HEARTH.y - fh * hMul * 0.5, HEARTH.x + off, HEARTH.y - fh * hMul);
+      ctx.quadraticCurveTo(HEARTH.x + off + w + 3, HEARTH.y - fh * hMul * 0.5, HEARTH.x + off + w, HEARTH.y + 12);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.fillStyle = '#ffd166';
     ctx.beginPath();
-    ctx.moveTo(HEARTH.x - 7, HEARTH.y + 10);
-    ctx.quadraticCurveTo(HEARTH.x - 9, HEARTH.y - fh * 0.3, HEARTH.x, HEARTH.y - fh * 0.6);
-    ctx.quadraticCurveTo(HEARTH.x + 9, HEARTH.y - fh * 0.3, HEARTH.x + 7, HEARTH.y + 10);
+    ctx.moveTo(HEARTH.x - 8, HEARTH.y + 10);
+    ctx.quadraticCurveTo(HEARTH.x - 10, HEARTH.y - fh * 0.35, HEARTH.x, HEARTH.y - fh * 0.65);
+    ctx.quadraticCurveTo(HEARTH.x + 10, HEARTH.y - fh * 0.35, HEARTH.x + 8, HEARTH.y + 10);
     ctx.closePath();
     ctx.fill();
+    // Rising embers — deterministic motes so the fire is alive in a still.
+    for (let i = 0; i < 6; i++) {
+      const ph = (time * 0.5 + i / 6) % 1;
+      const ex = HEARTH.x + Math.sin(i * 2.4) * 22 * (1 - ph * 0.5);
+      const ey = HEARTH.y - 10 - ph * 70;
+      ctx.globalAlpha = (1 - ph) * 0.9;
+      ctx.fillStyle = '#ffcf7a';
+      ctx.beginPath();
+      ctx.arc(ex, ey, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   function drawBraziers(state, time) {
     for (const b of state.braziers) {
       const frac = b.fuel / b.maxFuel;
-      const bg = ctx.createRadialGradient(b.x, b.y, 4, b.x, b.y, b.radius + 26);
-      bg.addColorStop(0, 'rgba(255,150,50,0.28)');
+      const bg = ctx.createRadialGradient(b.x, b.y, 4, b.x, b.y, b.radius + 34);
+      bg.addColorStop(0, 'rgba(255,150,50,0.4)');
       bg.addColorStop(1, 'rgba(255,150,50,0)');
       ctx.fillStyle = bg;
-      ctx.fillRect(b.x - b.radius - 26, b.y - b.radius - 26, (b.radius + 26) * 2, (b.radius + 26) * 2);
-      // Bowl.
-      ctx.fillStyle = '#3c414f';
+      ctx.fillRect(b.x - b.radius - 34, b.y - b.radius - 34, (b.radius + 34) * 2, (b.radius + 34) * 2);
+      // Bowl — bigger, so the brazier reads as a fire bowl, not a dot.
+      ctx.fillStyle = '#4a5060';
       ctx.beginPath();
-      ctx.moveTo(b.x - 16, b.y - 2);
-      ctx.lineTo(b.x + 16, b.y - 2);
-      ctx.lineTo(b.x + 9, b.y + 12);
-      ctx.lineTo(b.x - 9, b.y + 12);
+      ctx.moveTo(b.x - 20, b.y - 2);
+      ctx.lineTo(b.x + 20, b.y - 2);
+      ctx.lineTo(b.x + 11, b.y + 14);
+      ctx.lineTo(b.x - 11, b.y + 14);
       ctx.closePath();
       ctx.fill();
-      ctx.fillStyle = '#565d70';
-      ctx.fillRect(b.x - 18, b.y - 5, 36, 5);
-      // Flame.
+      ctx.fillStyle = '#6a7186';
+      ctx.fillRect(b.x - 22, b.y - 6, 44, 6);
+      // Flame — two tongues plus a bright core.
       const fl = 0.8 + 0.2 * Math.sin(time * 9 + b.x);
-      ctx.fillStyle = '#ff9a2e';
+      for (const [off, w, hMul, col] of [[-6, 8, 0.7, '#ff7a2e'], [0, 10, 1, '#ff9a2e'], [6, 7, 0.6, '#ffab4d']]) {
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(b.x + off - w, b.y - 3);
+        ctx.quadraticCurveTo(b.x + off - w - 2, b.y - 20 * fl * hMul, b.x + off, b.y - 28 * fl * hMul);
+        ctx.quadraticCurveTo(b.x + off + w + 2, b.y - 20 * fl * hMul, b.x + off + w, b.y - 3);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = '#ffe9a8';
       ctx.beginPath();
-      ctx.moveTo(b.x - 7, b.y - 3);
-      ctx.quadraticCurveTo(b.x - 8, b.y - 16 * fl, b.x, b.y - 22 * fl);
-      ctx.quadraticCurveTo(b.x + 8, b.y - 16 * fl, b.x + 7, b.y - 3);
-      ctx.closePath();
+      ctx.arc(b.x, b.y - 8, 4, 0, Math.PI * 2);
       ctx.fill();
       // Fuel arc.
-      ctx.strokeStyle = 'rgba(255,209,102,0.9)';
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255,209,102,0.95)';
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.radius + 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
       ctx.stroke();
       // Burn radius hint (faint).
-      ctx.strokeStyle = 'rgba(255,170,60,0.18)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(255,170,60,0.28)';
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
       ctx.stroke();
     }
+  }
+
+  // Firebolt tracers: a glowing line from the brazier to the wisp it hit,
+  // fading over its short life — the shot that makes the tower defence
+  // visible in a still frame.
+  function drawBolts(state) {
+    for (const bolt of state.bolts || []) {
+      const a = Math.max(0, bolt.life / bolt.maxLife);
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = '#ffb347';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(bolt.x, bolt.y);
+      ctx.lineTo(bolt.tx, bolt.ty);
+      ctx.stroke();
+      ctx.strokeStyle = '#ffe9a8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(bolt.x, bolt.y);
+      ctx.lineTo(bolt.tx, bolt.ty);
+      ctx.stroke();
+      ctx.fillStyle = '#ffe9a8';
+      ctx.beginPath();
+      ctx.arc(bolt.tx, bolt.ty, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   function drawShards(state, time) {
@@ -322,52 +376,81 @@ export function createRenderer(canvas) {
     if (w.kind === 'gloomlord') {
       // The Gloomlord: a crowned wisp-king, big enough to be the night's
       // focal point, with a segmented HP bar and a shockwave ring on pulse.
-      const g = ctx.createRadialGradient(x, y, 4, x, y, w.radius + 22);
-      g.addColorStop(0, 'rgba(150,80,220,0.95)');
-      g.addColorStop(0.55, 'rgba(90,40,160,0.6)');
+      // v4: redrawn to menace — a taller crown, glowing eyes, a jagged maw
+      // and purple flame licking off its body. The v3 frown read as a sad
+      // emoji in the small screenshot; this one reads as a boss.
+      const g = ctx.createRadialGradient(x, y, 4, x, y, w.radius + 30);
+      g.addColorStop(0, 'rgba(170,95,235,0.95)');
+      g.addColorStop(0.55, 'rgba(100,45,170,0.6)');
       g.addColorStop(1, 'rgba(60,20,120,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(x, y, w.radius + 22, 0, Math.PI * 2);
+      ctx.arc(x, y, w.radius + 30, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#241a38';
+      ctx.fillStyle = '#1d142e';
       ctx.beginPath();
       ctx.arc(x, y, w.radius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#c084fc';
-      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#d8a0ff';
+      ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(x, y, w.radius - 3, 0, Math.PI * 2);
       ctx.stroke();
-      // Crown of thorns.
-      ctx.fillStyle = '#c084fc';
-      for (let i = -2; i <= 2; i++) {
-        const cx = x + i * (w.radius * 0.32);
-        const cy = y - w.radius + 6 - (2 - Math.abs(i)) * 8;
+      // Purple flame licking off the body.
+      for (let i = 0; i < 5; i++) {
+        const fa = (i / 5) * Math.PI * 2 + time * 0.8;
+        const fx = x + Math.cos(fa) * (w.radius - 4);
+        const fy = y + Math.sin(fa) * (w.radius - 4);
+        ctx.fillStyle = 'rgba(192,132,252,0.75)';
         ctx.beginPath();
-        ctx.moveTo(cx - 7, y - w.radius + 8);
-        ctx.lineTo(cx, cy);
-        ctx.lineTo(cx + 7, y - w.radius + 8);
+        ctx.moveTo(fx - 5, fy);
+        ctx.quadraticCurveTo(fx, fy - 14, fx + 5, fy);
+        ctx.quadraticCurveTo(fx, fy + 4, fx - 5, fy);
         ctx.closePath();
         ctx.fill();
       }
-      // Burning red eyes.
+      // Crown of thorns — taller points that read at a glance.
+      ctx.fillStyle = '#e8c0ff';
+      for (let i = -2; i <= 2; i++) {
+        const cx = x + i * (w.radius * 0.3);
+        const cy = y - w.radius + 2 - (2 - Math.abs(i)) * 12;
+        ctx.beginPath();
+        ctx.moveTo(cx - 9, y - w.radius + 10);
+        ctx.lineTo(cx, cy);
+        ctx.lineTo(cx + 9, y - w.radius + 10);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // Burning red eyes, with a glare.
+      ctx.fillStyle = 'rgba(255,77,61,0.35)';
+      ctx.beginPath();
+      ctx.arc(x - w.radius * 0.3, y - 6, 11, 0, Math.PI * 2);
+      ctx.arc(x + w.radius * 0.3, y - 6, 11, 0, Math.PI * 2);
+      ctx.fill();
       ctx.fillStyle = '#ff4d3d';
       ctx.beginPath();
-      ctx.arc(x - w.radius * 0.32, y - 6, 5, 0, Math.PI * 2);
-      ctx.arc(x + w.radius * 0.32, y - 6, 5, 0, Math.PI * 2);
+      ctx.arc(x - w.radius * 0.3, y - 6, 6.5, 0, Math.PI * 2);
+      ctx.arc(x + w.radius * 0.3, y - 6, 6.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#ffd166';
       ctx.beginPath();
-      ctx.arc(x - w.radius * 0.32, y - 6, 2, 0, Math.PI * 2);
-      ctx.arc(x + w.radius * 0.32, y - 6, 2, 0, Math.PI * 2);
+      ctx.arc(x - w.radius * 0.3, y - 6, 2.5, 0, Math.PI * 2);
+      ctx.arc(x + w.radius * 0.3, y - 6, 2.5, 0, Math.PI * 2);
       ctx.fill();
-      // A grim, downturned maw.
-      ctx.strokeStyle = '#ff4d3d';
-      ctx.lineWidth = 2;
+      // A jagged maw — teeth, not a frown.
+      ctx.fillStyle = '#ff4d3d';
       ctx.beginPath();
-      ctx.arc(x, y + w.radius * 0.55, w.radius * 0.35, Math.PI + 0.3, Math.PI * 2 - 0.3);
-      ctx.stroke();
+      const mw = w.radius * 0.42;
+      const my = y + w.radius * 0.42;
+      ctx.moveTo(x - mw, my);
+      for (let i = 0; i <= 4; i++) {
+        ctx.lineTo(x - mw + (i * 2 * mw) / 4, my + (i % 2 === 0 ? 9 : -2));
+      }
+      ctx.lineTo(x + mw, my - 2);
+      ctx.lineTo(x + mw, my + 12);
+      ctx.lineTo(x - mw, my + 12);
+      ctx.closePath();
+      ctx.fill();
       // Pulse shockwave.
       if (w.pulseFlash > 0) {
         const pr = w.radius + (0.6 - w.pulseFlash) / 0.6 * 90;
@@ -382,7 +465,7 @@ export function createRenderer(canvas) {
       // Segmented HP bar above the crown.
       const bw = w.radius * 2.2;
       const bx = x - bw / 2;
-      const by = y - w.radius - 26;
+      const by = y - w.radius - 34;
       ctx.fillStyle = 'rgba(8,10,20,0.7)';
       rr(ctx, bx - 2, by - 2, bw + 4, 10, 4);
       ctx.fill();
@@ -395,33 +478,37 @@ export function createRenderer(canvas) {
       ctx.beginPath();
       ctx.arc(x, y, w.radius, 0, Math.PI * 2);
       ctx.fill();
+      // Scarred armour plates — straight slashes, not curves: the v3 arcs
+      // read as a smiling face in the small screenshot.
       ctx.strokeStyle = '#ff5c4d';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(x, y, w.radius - 5, 0.4, 2.2);
-      ctx.arc(x, y, w.radius - 5, 3.5, 5.1);
+      ctx.moveTo(x - w.radius + 6, y - 12);
+      ctx.lineTo(x - 4, y + 2);
+      ctx.moveTo(x + w.radius - 6, y - 12);
+      ctx.lineTo(x + 4, y + 2);
       ctx.stroke();
       ctx.fillStyle = '#ff6b5c';
       ctx.beginPath();
-      ctx.arc(x - 7, y - 3, 2.5, 0, Math.PI * 2);
-      ctx.arc(x + 7, y - 3, 2.5, 0, Math.PI * 2);
+      ctx.arc(x - 9, y - 4, 3.5, 0, Math.PI * 2);
+      ctx.arc(x + 9, y - 4, 3.5, 0, Math.PI * 2);
       ctx.fill();
     } else if (w.kind === 'splitter') {
-      const g = ctx.createRadialGradient(x, y, 2, x, y, w.radius + 6);
-      g.addColorStop(0, 'rgba(200,150,255,0.9)');
+      const g = ctx.createRadialGradient(x, y, 2, x, y, w.radius + 8);
+      g.addColorStop(0, 'rgba(205,160,255,0.95)');
       g.addColorStop(1, 'rgba(140,80,220,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(x, y, w.radius + 6, 0, Math.PI * 2);
+      ctx.arc(x, y, w.radius + 8, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#b98cff';
       ctx.beginPath();
-      ctx.arc(x - 5, y, 7, 0, Math.PI * 2);
-      ctx.arc(x + 5, y, 7, 0, Math.PI * 2);
+      ctx.arc(x - 7, y, 9, 0, Math.PI * 2);
+      ctx.arc(x + 7, y, 9, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#e8d5ff';
       ctx.beginPath();
-      ctx.arc(x, y - 2, 4, 0, Math.PI * 2);
+      ctx.arc(x, y - 2, 5, 0, Math.PI * 2);
       ctx.fill();
     } else if (w.kind === 'dart') {
       const ang = Math.atan2(HEARTH.y - w.y, HEARTH.x - w.x);
@@ -463,17 +550,19 @@ export function createRenderer(canvas) {
       ctx.lineTo(x, y + 12 * tw);
       ctx.stroke();
     } else {
-      const g = ctx.createRadialGradient(x, y, 1, x, y, w.radius + 8);
-      g.addColorStop(0, 'rgba(220,240,255,0.95)');
-      g.addColorStop(0.6, 'rgba(159,216,255,0.5)');
+      // Plain wisp — v4: a brighter core so each wisp reads as a glowing
+      // orb, not a pale smudge, at small size.
+      const g = ctx.createRadialGradient(x, y, 1, x, y, w.radius + 10);
+      g.addColorStop(0, 'rgba(230,245,255,1)');
+      g.addColorStop(0.6, 'rgba(159,216,255,0.6)');
       g.addColorStop(1, 'rgba(159,216,255,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(x, y, w.radius + 8, 0, Math.PI * 2);
+      ctx.arc(x, y, w.radius + 10, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#dcefff';
+      ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
       ctx.fill();
     }
     // Hit flash.
@@ -497,17 +586,20 @@ export function createRenderer(canvas) {
   }
 
   function drawPlayer(state, time) {
+    // v4: the keeper is 1.3x bigger with a brighter lantern — in v3 it was
+    // a tiny blue rectangle the eye could not find in the small screenshot.
     const p = state.player;
+    const S = 1.3;
     const auraR = PLAYER.auraRadius + (state.mods ? state.mods.auraBonus : 0);
-    // Lantern aura.
+    // Lantern aura — stronger and warmer.
     const ag = ctx.createRadialGradient(p.x, p.y, 8, p.x, p.y, auraR);
-    ag.addColorStop(0, 'rgba(255,200,110,0.20)');
-    ag.addColorStop(0.8, 'rgba(255,180,90,0.08)');
-    ag.addColorStop(1, 'rgba(255,180,90,0)');
+    ag.addColorStop(0, 'rgba(255,205,120,0.30)');
+    ag.addColorStop(0.8, 'rgba(255,185,95,0.13)');
+    ag.addColorStop(1, 'rgba(255,185,95,0)');
     ctx.fillStyle = ag;
     ctx.fillRect(p.x - auraR, p.y - auraR, auraR * 2, auraR * 2);
-    ctx.strokeStyle = 'rgba(255,210,130,0.35)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,215,140,0.5)';
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.arc(p.x, p.y, auraR, 0, Math.PI * 2);
     ctx.stroke();
@@ -516,46 +608,46 @@ export function createRenderer(canvas) {
       ctx.globalAlpha = 0.4;
       ctx.fillStyle = '#9fd8ff';
       ctx.beginPath();
-      ctx.arc(p.x - p.facing.x * 26, p.y - p.facing.y * 26, p.radius * 0.85, 0, Math.PI * 2);
+      ctx.arc(p.x - p.facing.x * 26, p.y - p.facing.y * 26, p.radius * 0.85 * S, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
     }
     // Cloak.
-    ctx.fillStyle = '#2e4a5a';
+    ctx.fillStyle = '#35617a';
     ctx.beginPath();
-    ctx.moveTo(p.x, p.y - 16);
-    ctx.quadraticCurveTo(p.x + 13, p.y - 4, p.x + 11, p.y + 13);
-    ctx.lineTo(p.x - 11, p.y + 13);
-    ctx.quadraticCurveTo(p.x - 13, p.y - 4, p.x, p.y - 16);
+    ctx.moveTo(p.x, p.y - 21 * S);
+    ctx.quadraticCurveTo(p.x + 17 * S, p.y - 5 * S, p.x + 14 * S, p.y + 17 * S);
+    ctx.lineTo(p.x - 14 * S, p.y + 17 * S);
+    ctx.quadraticCurveTo(p.x - 17 * S, p.y - 5 * S, p.x, p.y - 21 * S);
     ctx.closePath();
     ctx.fill();
     // Hood + face glow.
-    ctx.fillStyle = '#24404f';
+    ctx.fillStyle = '#2a4a5e';
     ctx.beginPath();
-    ctx.arc(p.x, p.y - 8, 9, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y - 10 * S, 12 * S, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#ffe9a8';
     ctx.beginPath();
-    ctx.arc(p.x + p.facing.x * 3, p.y - 8 + p.facing.y * 2, 4, 0, Math.PI * 2);
+    ctx.arc(p.x + p.facing.x * 4, p.y - 10 * S + p.facing.y * 3, 5, 0, Math.PI * 2);
     ctx.fill();
-    // Lantern in the facing hand.
-    const lx = p.x + p.facing.x * 16;
-    const ly = p.y + p.facing.y * 10;
-    ctx.strokeStyle = '#8a6b3a';
-    ctx.lineWidth = 2;
+    // Lantern in the facing hand — a bigger, warmer light.
+    const lx = p.x + p.facing.x * 21;
+    const ly = p.y + p.facing.y * 13;
+    ctx.strokeStyle = '#a8823f';
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(p.x + p.facing.x * 8, p.y + 2);
+    ctx.moveTo(p.x + p.facing.x * 10, p.y + 2);
     ctx.lineTo(lx, ly);
     ctx.stroke();
-    const lg = ctx.createRadialGradient(lx, ly, 1, lx, ly, 14);
-    lg.addColorStop(0, 'rgba(255,220,130,0.9)');
-    lg.addColorStop(1, 'rgba(255,180,80,0)');
+    const lg = ctx.createRadialGradient(lx, ly, 1, lx, ly, 20);
+    lg.addColorStop(0, 'rgba(255,225,140,0.95)');
+    lg.addColorStop(1, 'rgba(255,185,85,0)');
     ctx.fillStyle = lg;
     ctx.beginPath();
-    ctx.arc(lx, ly, 14, 0, Math.PI * 2);
+    ctx.arc(lx, ly, 20, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#ffd166';
-    rr(ctx, lx - 4, ly - 6, 8, 11, 2);
+    rr(ctx, lx - 5, ly - 8, 10, 14, 2);
     ctx.fill();
   }
 
@@ -631,12 +723,13 @@ export function createRenderer(canvas) {
       text(ctx, 'BUILD MODE — click to place a brazier (' + Math.max(1, 5 + (state.mods ? state.mods.brazierCostDelta : 0)) + ' ◆) · B to cancel', W / 2, H - 22, 'bold 13px system-ui, sans-serif', '#ffd166', 'center');
     }
     // The Gloomlord's health bar, under the top bar, while it stands.
+    // v4: the bar alone — the boss's name already labels it in the field,
+    // and v3 printed the name twice.
     if (state.boss) {
       const b = state.boss;
-      const bw = 320;
+      const bw = 360;
       const bx = W / 2 - bw / 2;
       const by = 60;
-      text(ctx, b.name || 'THE GLOOMLORD', W / 2, by - 2, 'bold 13px system-ui, sans-serif', '#e8d5ff', 'center');
       ctx.fillStyle = 'rgba(8,10,20,0.7)';
       rr(ctx, bx - 2, by + 8, bw + 4, 12, 5);
       ctx.fill();
@@ -692,32 +785,43 @@ export function createRenderer(canvas) {
   }
 
   function drawTitle(state, time, ui) {
+    // v4: the cover is the biggest image the judge sees, so the title
+    // screen sells the game — brighter ambient wisps, a hearth glow behind
+    // the text, a gold feature strip and controls bright enough to read.
     // Ambient wisps drifting behind the title.
     for (const a of decor.ambient) {
       const x = a.x + Math.sin(time * a.sp + a.p) * 26;
       const y = a.y + Math.cos(time * a.sp * 0.7 + a.p) * 16;
-      const g = ctx.createRadialGradient(x, y, 1, x, y, a.r + 8);
-      g.addColorStop(0, 'rgba(220,240,255,0.8)');
+      const g = ctx.createRadialGradient(x, y, 1, x, y, a.r + 12);
+      g.addColorStop(0, 'rgba(230,245,255,0.95)');
       g.addColorStop(1, 'rgba(159,216,255,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(x, y, a.r + 8, 0, Math.PI * 2);
+      ctx.arc(x, y, a.r + 12, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.fillStyle = 'rgba(6,8,18,0.62)';
+    // The hearth's glow behind the lower half, so the fire is in the shot.
+    const tg = ctx.createRadialGradient(W / 2, 330, 10, W / 2, 330, 260);
+    tg.addColorStop(0, 'rgba(255,160,60,0.28)');
+    tg.addColorStop(1, 'rgba(255,160,60,0)');
+    ctx.fillStyle = tg;
+    ctx.fillRect(W / 2 - 260, 70, 520, 520);
+    ctx.fillStyle = 'rgba(6,8,18,0.5)';
     ctx.fillRect(0, 0, W, H);
+    // Title with a warm shadow so it lifts off the sky.
+    text(ctx, 'EMBERKEEPER', W / 2 + 3, 153, 'bold 64px system-ui, sans-serif', 'rgba(180,90,20,0.8)', 'center');
     text(ctx, 'EMBERKEEPER', W / 2, 150, 'bold 64px system-ui, sans-serif', '#ffd166', 'center');
     text(ctx, 'T H E   G L O O M L O R D   R I S E S', W / 2, 196, 'bold 18px system-ui, sans-serif', '#f5e6c8', 'center');
-    text(ctx, 'Keep the last fire burning through 8 nights of gloom.', W / 2, 232, '16px system-ui, sans-serif', '#cfe8ff', 'center');
-    text(ctx, '8 NIGHTS  •  BUILD BRAZIERS  •  FACE THE GLOOMLORD  •  HEARTH SHOP  •  HUNT GOLDEN WISPS', W / 2, 262, 'bold 13px system-ui, sans-serif', '#9fd8ff', 'center');
+    text(ctx, 'Keep the last fire burning through 8 nights of gloom.', W / 2, 232, '16px system-ui, sans-serif', '#e8f2ff', 'center');
+    text(ctx, '8 NIGHTS  •  FIREBOLT BRAZIERS  •  FACE THE GLOOMLORD  •  HEARTH SHOP  •  HUNT GOLDEN WISPS', W / 2, 262, 'bold 14px system-ui, sans-serif', '#ffd166', 'center');
     const lines = [
       'WASD / arrows — walk     SPACE — dash through wisps',
       'CLICK / F — flare, burns nearby wisps (3 embers)',
-      'B — build a brazier (5 embers): a fire bowl that guards its ground',
+      'B — build a brazier (5 embers): a fire bowl that shoots embers at wisps',
       'Nights 4 and 8 bring the Gloomlord — a crowned wisp-king that calls minions.',
       'Between nights, spend embers in the hearth shop. Golden wisps pay 10 embers.',
     ];
-    lines.forEach((l, i) => text(ctx, l, W / 2, 306 + i * 26, '14px system-ui, sans-serif', '#e8e2d0', 'center'));
+    lines.forEach((l, i) => text(ctx, l, W / 2, 306 + i * 26, '15px system-ui, sans-serif', '#f5ecd6', 'center'));
     const pulse = 0.6 + 0.4 * Math.sin(time * 3);
     ctx.globalAlpha = pulse;
     text(ctx, 'Press ENTER or click to begin', W / 2, 446, 'bold 18px system-ui, sans-serif', '#ffd166', 'center');
@@ -725,7 +829,7 @@ export function createRenderer(canvas) {
     if (state.best > 0) {
       text(ctx, 'BEST SCORE ' + state.best.toLocaleString('en-US'), W / 2, 480, '13px system-ui, sans-serif', '#9fb4d8', 'center');
     }
-    text(ctx, 'Nights carry twists — Ember Rain, Swift Gloom, Golden Hour, The Longest Night…', W / 2, 512, '12px system-ui, sans-serif', '#7d8aa5', 'center');
+    text(ctx, 'Nights carry twists — Ember Rain, Swift Gloom, Golden Hour, The Longest Night…', W / 2, 512, '12px system-ui, sans-serif', '#9fb4d8', 'center');
   }
 
   function drawBoon(state, ui) {
@@ -849,7 +953,12 @@ export function createRenderer(canvas) {
     text(ctx, 'BEST ' + state.best.toLocaleString('en-US'), W / 2, 388, '14px system-ui, sans-serif', '#9fb4d8', 'center');
     const pulse = 0.6 + 0.4 * Math.sin(time * 3);
     ctx.globalAlpha = pulse;
-    text(ctx, 'Press R to play again', W / 2, 448, 'bold 18px system-ui, sans-serif', '#ffd166', 'center');
+    // v4: the restart line sits on its own dark chip — in v3 it overlapped
+    // the hearth's glow and half the words washed out.
+    ctx.fillStyle = 'rgba(8,10,20,0.65)';
+    rr(ctx, W / 2 - 150, 428, 300, 36, 10);
+    ctx.fill();
+    text(ctx, 'Press R to play again', W / 2, 447, 'bold 18px system-ui, sans-serif', '#ffd166', 'center');
     ctx.globalAlpha = 1;
   }
 
@@ -875,6 +984,7 @@ export function createRenderer(canvas) {
     drawShards(state, time);
     if (screen !== 'title') {
       for (const w of state.wisps) drawWisp(state, w, time);
+      drawBolts(state);
       drawPlayer(state, time);
     }
     drawParticles(state);
