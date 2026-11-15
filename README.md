@@ -19,7 +19,8 @@ fire. Survive all eight nights and the dawn breaks.
 - **Flare** — mouse click or F. A burst of light that banishes frail wisps
   around you. Costs 3 embers.
 - **Build a brazier** — B, then click a spot. A fire bowl that burns wisps
-  in its light until its fuel gutters out. Costs 5 embers.
+  in its light and shoots firebolts at them until its fuel gutters out.
+  Costs 5 embers.
 - **Pause** — P or Esc. **Sound** — M. **Restart** — R on the end screens.
 - **Hearth shop** — between nights, after the boon: spend embers on Lantern
   Oil, a Deep Well, Swift Current or Ember Rounds. **1–4** buy a track,
